@@ -71,11 +71,16 @@ const App = () => {
       children: (
         <>
           <Content>
-            <div>
-              Wobbegong-kana is an extension of Kana's explore mode for
-              pre-analyzed datasets. First lets find datasets of interest from
-              LunaticDB.
-            </div>
+            <p>
+              Search <a href="https://github.roche.com/GP/LunaticDB">LunaticDB</a> for interesting single-cell datasets.
+            </p>
+            <p>
+              For metadata queries, we can use <code>AND</code>, <code>OR</code>, and <code>NOT</code> along with parentheses,
+              e.g., <code>(mouse OR rat) AND pancreas AND NOT mm9</code> will find mouse or rat pancreas entries that do not have mm9 in its metadata.
+              Partial searches can be performed by specifying the <code>*</code> or <code>?</code> wildcards.
+              Advanced users can also scope the search for terms to specific metadata fields,
+              e.g., <code>genome: GRCm38</code> will only match when GRCm38 is present in the <code>genome</code> field.
+            </p>
 
             <Form
               name="basic"
@@ -96,19 +101,21 @@ const App = () => {
               autoComplete="off"
             >
               <Form.Item
-                label="Query keywords"
+                label="Search metadata"
                 name="query"
-                initialValue="brain AND mouse"
               >
-                <Input />
+                <Input 
+                  placeholder="brain AND mouse"
+                />
               </Form.Item>
 
               <Form.Item
-                label="Collection"
+                label="Filter by path"
                 name="path"
-                initialValue="vida_sc_data"
               >
-                <Input />
+                <Input
+                  placeholder="vida_sc_data"
+                />
               </Form.Item>
 
               <Form.Item label={null}>
