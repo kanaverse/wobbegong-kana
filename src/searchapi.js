@@ -1,4 +1,4 @@
-const sewerrat = window["kanaConfig"]["searchapi"];
+const sewerrat = "https://research.gene.com/sewerrat/api/v1";
 
 export async function findExperiments(searchtext, searchpath, searchnum=100) {
   // First, assembling the query body.
@@ -12,14 +12,14 @@ export async function findExperiments(searchtext, searchpath, searchnum=100) {
   const type_condition = allowed_types
     .map((x) => "object.type: " + x)
     .join(" OR ");
-  if (searchtext != null && searchtext != "") {
-    searchtext = type_condition;
-  } else {
+  if (typeof searchtext != "undefined" && searchtext != null && searchtext != "") {
     searchtext = "(" + searchtext + ") AND (" + type_condition + ")";
+  } else {
+    searchtext = type_condition;
   }
   query.push({ type: "text", text: searchtext });
 
-  if (searchpath != null && searchpath != "") {
+  if (typeof searchpath != "undefiend" && searchpath != null && searchpath != "") {
     query.push({ type: "path", path: searchpath });
   }
 
@@ -80,4 +80,27 @@ export function breakString(str, maxLength) {
     }
     return result;
   }
+}
+
+export async function findMarkers(path) {
+  let dir = path.slice(0, path.lastIndexOf("/"));
+
+  let list_res = await fetch(sewerrat + "/list?recursive=false&path=" + encodeURIComponent(dir));
+  if (!list_res.ok) {
+    throw new Error("failed to obtain a directory listing for '" + dir + "' (" + String(list_res.status) + ")");
+  }
+  let listing = await list_res.json();
+
+  if (listing.indexOf("markers/") < 0) {
+    return listing.filter(x => x.startsWith("markers-")).map(x => dir + "/" + x);
+  }
+
+  let subdir = dir + "/markers";
+  let sublist_res = await fetch(sewerrat + "/list?recursive=false&path=" + encodeURIComponent(subdir));
+  if (!sublist_res.ok) {
+    throw new Error("failed to obtain a directory listing for '" + subdir + "' (" + String(sublist_res.status) + ")");
+  }
+
+  let sublisting = await sublist_res.json();
+  return sublisting.filter(x => x.endsWith("/")).map(x => subdir + "/" + x);
 }
