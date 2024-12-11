@@ -1,4 +1,4 @@
-const sewerrat = "https://research.gene.com/sewerrat/api/v1";
+const sewerrat = window["kanaConfig"]["searchapi"];
 
 export async function findExperiments(searchtext, searchpath, searchnum=100) {
   // First, assembling the query body.
