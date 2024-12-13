@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useRef, useState, useContext } from "react";
 import {
   Breadcrumb,
   Layout,
@@ -16,10 +16,11 @@ const { Header, Content, Sider } = Layout;
 
 import * as wobbegongapi from "../utils/wobbegongapi.js";
 import * as sewerratapi from "../utils/searchapi.js";
+// import { AppContext } from "../AppContext.jsx";
 
 const Search = (props) => {
+  // const { tableData, setTableData } = useContext(AppContext);
   const [tableData, setTableData] = useState(null);
-
   const onSearch = async (values) => {
     let results = await sewerratapi.findExperiments(
       values["query"],
@@ -39,7 +40,7 @@ const Search = (props) => {
       key: "action",
       render: (_, record) => (
         <Space size="middle">
-          <a onClick={() => props.addTabCallback(record)}>Explore</a>
+          <a onClick={() => props.setAddToExplore(record)}>Explore</a>
         </Space>
       ),
     },

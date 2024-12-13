@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useRef, useState, useContext, useEffect } from "react";
 import {
   Breadcrumb,
   Layout,
@@ -17,18 +17,28 @@ const { Header, Content, Sider } = Layout;
 
 import Explorer from "./TabComps/Explorer.jsx";
 import Search from "./TabComps/Search.jsx";
+// import { AppContext } from "./AppContext.jsx";
 
 const App = () => {
+  const [addToExplore, setAddToExplore] = useState(null);
+
+  useEffect(() => {
+    if (addToExplore !== null) {
+      addNewTab(addToExplore);
+      setAddToExplore(null);
+    }
+  }, [addToExplore]);
+
   const addNewTab = (record) => {
     // const newActiveKey = `newTab${newTabIndex.current++}`;
-    console.log(items);
-    const newPanes = [...items];
+
+    const newPanes = [...tabItems];
     newPanes.push({
       label: "Explore " + record.metadata.title,
       children: <Explorer record={record} />,
       key: record.path,
     });
-    setItems(newPanes);
+    setTabItems(newPanes);
     setActiveKey(record.path);
   };
 
@@ -42,17 +52,17 @@ const App = () => {
       label: "Find dataset",
       closable: false,
       icon: <SearchOutlined />,
-      children: <Search addTabCallback={addNewTab} />,
+      children: <Search setAddToExplore={setAddToExplore} />,
     },
   ];
 
   const [activeKey, setActiveKey] = useState(defaultPanes[0].key);
-  const [items, setItems] = useState(defaultPanes);
+  const [tabItems, setTabItems] = useState(defaultPanes);
   const newTabIndex = useRef(0);
 
   const removeTab = (targetKey) => {
-    const targetIndex = items.findIndex((pane) => pane.key === targetKey);
-    const newPanes = items.filter((pane) => pane.key !== targetKey);
+    const targetIndex = tabItems.findIndex((pane) => pane.key === targetKey);
+    const newPanes = tabItems.filter((pane) => pane.key !== targetKey);
     if (newPanes.length && targetKey === activeKey) {
       const { key } =
         newPanes[
@@ -60,7 +70,7 @@ const App = () => {
         ];
       setActiveKey(key);
     }
-    setItems(newPanes);
+    setTabItems(newPanes);
   };
 
   const onEdit = (targetKey, action) => {
@@ -96,7 +106,7 @@ const App = () => {
       >
         <Tabs
           type="editable-card"
-          items={items}
+          items={tabItems}
           onChange={onTabChange}
           tabPosition="top"
           activeKey={activeKey}

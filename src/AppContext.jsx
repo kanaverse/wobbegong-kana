@@ -3,13 +3,12 @@ import React, { createContext, useState } from "react";
 export const AppContext = createContext(null);
 
 const AppContextProvider = ({ children }) => {
-  const [tabItems, setTabItems] = useState(null);
+  const [tableData, setTableData] = useState(null);
 
   return (
     <AppContext.Provider
       value={{
-        tabItems,
-        setTabItems,
+        tableData, setTableData
       }}
     >
       {children}
