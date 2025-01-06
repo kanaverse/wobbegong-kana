@@ -23,11 +23,21 @@ const App = () => {
   const [api, contextHolder] = notification.useNotification();
 
   const onSearch = async (values) => {
+    const limit = 100;
     let results = await sewerratapi.findExperiments(
       values["query"],
       values["path"],
-      20
+      limit + 1
     );
+
+    console.log(results.length);
+    if (results.length > limit) {
+      api.info({
+        message: `Truncated search to the first ${limit} results.`,
+        placement: "topRight",
+      });
+      results = results.slice(0, limit);
+    }
 
     setTableData(results);
   };

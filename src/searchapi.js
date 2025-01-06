@@ -56,7 +56,7 @@ export async function findExperiments(searchtext, searchpath, searchnum=100) {
     if (!("next" in body)) {
       break;
     }
-    stub = body.next;
+    stub = sewerrat + body.next;
   }
 
   return collected;
