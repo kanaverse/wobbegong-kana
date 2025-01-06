@@ -11,6 +11,7 @@ import {
   Checkbox,
   Table,
   Space,
+  notification,
 } from "antd";
 const { Header, Content, Sider } = Layout;
 
@@ -19,6 +20,7 @@ import * as sewerratapi from "./searchapi.js";
 
 const App = () => {
   const [tableData, setTableData] = useState(null);
+  const [api, contextHolder] = notification.useNotification();
 
   const onSearch = async (values) => {
     let results = await sewerratapi.findExperiments(
@@ -34,45 +36,49 @@ const App = () => {
   };
 
   const tableColumns = [{
-    // title: 'Action',
-    key: 'action',
-    render: (_, record) => (
-      <Space size="middle">
-        <a>Explore</a>
-      </Space>
-    ),
-  },{
     title: 'Title',
     key: 'title',
     render: (_, record) => (
       record.metadata.title
     ),
-    width: '20%',
-  },{
-    title: 'Description',
-    key: 'description',
-    render: (_, record) => (
-      sewerratapi.truncate(record.metadata.description, 250)
-    ),
-    width: '70%',
+    width: '30%',
   },{
     title: 'Path',
     key: 'path',
     render: (_, record) => (
-      sewerratapi.breakString(record.path, 50)
+      <code>{sewerratapi.truncateString(record.path, 100)}</code>
     ),
-    width: '10%',
+    width: '30%',
+  },{
+    title: 'Actions',
+    key: 'explore',
+    render: (_, record) => (
+      <span>
+      <Button type="primary">Explore</Button>
+      &nbsp;
+      <Button 
+        onClick={e => {
+          e.preventDefault();
+          navigator.clipboard.writeText(record.path);
+          api.info({
+            message: `Copied path to clipboard!`,
+            placement: "top",
+          });
+        }}
+      >Copy path</Button>
+      </span>
+    ),
+    width: '10%'
   }]
 
   const tabItems = [
     {
       key: "1",
-      label: "Find dataset",
+      label: "Search",
       children: (
         <>
           <Content>
             <p>
-              Search <a href="https://github.roche.com/GP/LunaticDB">LunaticDB</a> for interesting single-cell datasets.
             </p>
             <p>
               For metadata queries, we can use <code>AND</code>, <code>OR</code>, and <code>NOT</code> along with parentheses,
@@ -126,10 +132,11 @@ const App = () => {
             </Form>
           </Content>
 
+          {contextHolder}
           {tableData !== null ? (
             <>
               {Array.isArray(tableData) && tableData.length > 0 ? (
-                <Table dataSource={tableData} columns={tableColumns} />
+                <Table dataSource={tableData} columns={tableColumns} style={{wordWrap:"break-word"}} />
               ) : (
                 <div>No datasets available for this search.</div>
               )}
@@ -200,7 +207,7 @@ const App = () => {
           alignItems: "center",
         }}
       >
-        <div>wobbegong-demo</div>
+        <h2>Search <a href="https://github.roche.com/GP/LunaticDB">LunaticDB</a> for interesting single-cell datasets</h2>
       </Header>
       <Content
         style={{

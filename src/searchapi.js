@@ -70,15 +70,12 @@ export function truncate(str, maxLength) {
   }
 }
 
-export function breakString(str, maxLength) {
-  if (str.length <= maxLength) {
+export function truncateString(str, maxLength) {
+  if (str.length <= maxLength + 10) {
     return str;
   } else {
-    let result = "";
-    for (let i = 0; i < str.length; i += maxLength) {
-      result = result + " " + str.substr(i, maxLength);
-    }
-    return result;
+    let half = maxLength / 2;
+    return str.slice(0, half) + "..." + str.slice(str.length - half, str.length)
   }
 }
 
