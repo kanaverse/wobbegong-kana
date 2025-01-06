@@ -50,6 +50,50 @@ const App = () => {
     ),
     width: '30%',
   },{
+    title: 'Authors',
+    key: 'authors',
+    render: (_, record) => {
+      let aut = record.metadata?.authors;
+      if (typeof aut == "undefined") {
+        return "";
+      } else {
+        return aut.join(", ");
+      }
+    },
+  },{
+    title: 'Number of cells',
+    key: 'num_cells',
+    render: (_, record) => {
+      let ncols = record.metadata?.object?.summarized_experiment?.columns;
+      if (typeof ncols == "undefined") {
+        return "unknown";
+      } else {
+        return ncols;
+      }
+    },
+  },{
+    title: 'Assays',
+    key: 'red_dims',
+    render: (_, record) => {
+      let rd = record.metadata?.object?.summarized_experiment?.assays;
+      if (typeof rd == "undefined") {
+        return "";
+      } else {
+        return rd.join(", ");
+      }
+    },
+  },{
+    title: 'Reduced dimensions',
+    key: 'red_dims',
+    render: (_, record) => {
+      let rd = record.metadata?.object?.single_cell_experiment?.reduced_dimensions;
+      if (typeof rd == "undefined") {
+        return "";
+      } else {
+        return rd.join(", ");
+      }
+    },
+  },{
     title: 'Actions',
     key: 'explore',
     render: (_, record) => (
