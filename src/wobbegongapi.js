@@ -1,7 +1,9 @@
-const url = window["kanaConfig"]["wobbegongapi"];
+import * as wob from "wobbegong";
+
+const wobbegong_url = "https://research.gene.com/wobbegong/api/v1";
 
 export async function fetchJson(path) {
-  const res = await fetch(url + "/file/" + path);
+  const res = await fetch(wobbegong_url + "/file/" + path);
   if (!res.ok) {
     throw new Error(
       "oops, failed to retrieve '" + path + "' (" + String(res.status) + ")"
@@ -11,7 +13,7 @@ export async function fetchJson(path) {
 }
 
 export async function fetchRange(path, start, end) {
-  const res = await fetch(url + "/file/" + path, {
+  const res = await fetch(wobbegong_url + "/file/" + path, {
     headers: { Range: "bytes=" + String(start) + "-" + String(end - 1) },
   });
   if (!res.ok) {
@@ -25,37 +27,6 @@ export async function fetchRange(path, start, end) {
   }
   let output = new Uint8Array(await res.arrayBuffer());
   return output.slice(0, end - start); // trim off any excess junk
-}
-
-export async function convertPath(path) {
-  const res = await fetch(url + "/convert", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ path: path }),
-  });
-  if (!res.ok) {
-    throw new Error("failed to start conversion for '" + path + "'");
-  }
-
-  const body = await res.json();
-
-  let status = body.status;
-  while (status == "PENDING") {
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    const sres = await fetch(url + "/file/" + body.status_path);
-    if (!sres.ok) {
-      throw new Error("failed to poll for completion for '" + path + "'");
-    }
-    status = (await sres.text()).trimRight();
-  }
-
-  if (status == "FAILURE") {
-    throw new Error("conversion failed for '" + path + "'");
-  }
-
-  return body.data_path;
 }
 
 const sewerrat_url = "https://research.gene.com/sewerrat/api/v1";
@@ -108,6 +79,37 @@ export async function findMarkerFiles(path) {
   return all_markers;
 }
 
+export async function convertPath(path) {
+  const res = await fetch(wobbegong_url + "/convert", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ path: path }),
+  });
+  if (!res.ok) {
+    throw new Error("failed to start conversion for '" + path + "'");
+  }
+
+  const body = await res.json();
+
+  let status = body.status;
+  while (status == "PENDING") {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    const sres = await fetch(wobbegong_url + "/file/" + body.status_path);
+    if (!sres.ok) {
+      throw new Error("failed to poll for completion for '" + path + "'");
+    }
+    status = (await sres.text()).trimRight();
+  }
+
+  if (status == "FAILURE") {
+    throw new Error("conversion failed for '" + path + "'");
+  }
+
+  return body.data_path;
+}
+
 export async function convertAllFiles(path, markers) {
   let parent = path.replace(/\/[^\/]+$/, "");
 
@@ -128,17 +130,17 @@ export async function convertAllFiles(path, markers) {
       current.push(resolved[i]);
       i++;
     }
-    new_markers.push(current);
+    new_markers[key] = current;
   }
 
-  return [ resolved[0], new_markers ];
+  return { path: resolved[0], markers: new_markers };
 }
 
-export async function matchMarkersToExperiment(experiment, markers) {
+export async function matchMarkersToExperiment(converted_path, converted_markers) {
   // First we take the first entry from each marker type, get its row names, sort them and hash it.
   const marker_mapping = new Map;
-  for (const [key, val] of Object.entries(markers)) {
-    const df = await wob.load(val);
+  for (const [key, val] of Object.entries(converted_markers)) {
+    const df = await wob.load(val[0], fetchJson, fetchRange);
     if (!df.hasRowNames()) {
       continue;
     }
@@ -151,6 +153,54 @@ export async function matchMarkersToExperiment(experiment, markers) {
     marker_mapping.set(rn.length, existing);
   }
 
-  // Next we go through the main experiment and pull out its row names.
+  // Setting up a function to find a match.
+  let find_match = se_names => {
+    let candidates = marker_mapping.get(se_names.length);
+    if (typeof candidates == "undefined") {
+      return null;
+    }
 
+    let sorted_names = se_names.toSorted();
+    for (const { names, key } of candidates) {
+      let failed = false;
+      for (var i = 0; i < names.length; ++i) {
+        if (names[i] != sorted_names[i]) {
+          failed = true;
+          break
+        }
+      }
+
+      if (!failed) {
+        return key;
+      }
+    }
+
+    return null;
+  };
+
+  // Next we go through the main experiment and pull out its row names.
+  const sce = await wob.load(converted_path, fetchJson, fetchRange);
+  let main = null;
+  if (sce.hasRowData()) {
+    let rd = await sce.rowData();
+    if (rd.hasRowNames()) {
+      main = find_match(await rd.rowNames());
+    }
+  }
+
+  // Ditto for the alternative experiments.
+  let alts = {};
+  if (sce.isSingleCellExperiment()) {
+    const altnames = sce.alternativeExperimentNames();
+    for (const an of altnames) {
+      let ae = await sce.alternativeExperiment(an);
+      if (ae.hasRowNames()) {
+        alts[an] = find_match(await ae.rowNames());
+      } else {
+        alts[an] = null;
+      }
+    }
+  }
+
+  return { main: main, alternative: alts };
 }
