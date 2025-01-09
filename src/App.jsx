@@ -17,6 +17,7 @@ const { Header, Content, Sider } = Layout;
 
 import * as wobbegongapi from "./wobbegongapi.js";
 import * as sewerratapi from "./searchapi.js";
+import * as wob from "wobbegong";
 
 const App = () => {
   const [tableData, setTableData] = useState(null);
@@ -116,6 +117,17 @@ const App = () => {
           console.log(conversion);
           let mapping = await wobbegongapi.matchMarkersToExperiment(conversion.path, conversion.markers);
           console.log(mapping);
+          let sce = await wob.load(conversion.path, wobbegongapi.fetchJson, wobbegongapi.fetchRange);
+          let chosen = wobbegongapi.chooseAssay(sce);
+          console.log(chosen);
+          let ass = await sce.assay(chosen.assay);
+          let vals = await ass.row(0, { asDense: true });
+          if (chosen.normalize) {
+            let sf = await wobbegongapi.computeSizeFactors(ass);
+            console.log(sf);
+            vals = await wobbegongapi.normalizeCounts(vals, sf, true);
+          }
+          console.log(vals);
         }}
         >Explore</Button>
       &nbsp;

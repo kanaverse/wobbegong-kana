@@ -204,3 +204,60 @@ export async function matchMarkersToExperiment(converted_path, converted_markers
 
   return { main: main, alternative: alts };
 }
+
+export function chooseAssay(sce) {
+    let all_names = sce.assayNames();
+
+    // First we search for anything "log"-ish:
+    for (const a of all_names) {
+        if (a.toLowerCase().startsWith("log")) {
+            return { assay: a, normalize: false };
+        }
+    }
+
+    // Then we search for anything "count"-ish:
+    for (const a of all_names) {
+        if (a.toLowerCase().startsWith("count")) {
+            return { assay: a, normalize: true };
+        }
+    }
+
+    // Otherwise we just return the first assay.
+    return { assay: all_names[0], normalize: true };
+}
+
+export async function computeSizeFactors(assay) {
+    let colsums = await assay.statistic('column_sum');
+
+    let mean = 0;
+    for (const c of colsums) {
+        mean += c;
+    }
+    mean /= colsums.length;
+
+    let centered = new Float64Array(colsums.length);
+    for (var i = 0; i < colsums.length; i++) {
+        centered[i] = colsums[i] / mean;
+    }
+
+    return centered;
+}
+
+export function normalizeCounts(values, size_factors, log) {
+    let copy = new Float64Array(values.length);
+    for (var i = 0; i < values.length; i++) {
+        if (size_factors[i] > 0) {
+            copy[i] = values[i] / size_factors[i];
+        } else {
+            copy[i] = 0;
+        }
+    }
+
+    if (log) {
+        for (var i = 0; i < values.length; i++) {
+            copy[i] = Math.log2(copy[i]);
+        }
+    }
+
+    return copy;
+}
