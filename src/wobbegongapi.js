@@ -275,3 +275,19 @@ export function normalizeCounts(values, size_factors, log) {
 
     return copy;
 }
+
+export function mapNames(df_names, sce_names) {
+    let mapping = new Map;
+    for (var i = 0; i < sce_names.length; i++) {
+        mapping.set(sce_names[i], i);
+    }
+
+    // No need to protect against missingness, as matchMarkersToExperiment()
+    // should guarantee that the names are identical.
+    let output = [];
+    for (var i = 0; i < df_names.length; i++) {
+        output.push(mapping.get(df_names[i]));
+    }
+
+    return output;
+}
