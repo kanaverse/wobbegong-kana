@@ -2,16 +2,30 @@ import * as wob from "wobbegong";
 
 const wobbegong_url = "https://research.gene.com/wobbegong/api/v1";
 
+// We cache the JSON so that we don't have to make repeated requests
+// when creating new instances of the various wobbegong classes. 
+const wobbegong_json_cache = new Map;
+
 export async function fetchJson(path) {
+  let existing = wobbegong_json_cache.get(path);
+  if (typeof existing != "undefined") {
+    return existing;
+  }
+
   const res = await fetch(wobbegong_url + "/file/" + path);
   if (!res.ok) {
     throw new Error(
       "oops, failed to retrieve '" + path + "' (" + String(res.status) + ")"
     );
   }
-  return res.json();
+
+  let payload = await res.json();
+  wobbegong_json_cache.set(path, payload);
+  return payload;
 }
 
+// We don't cache the ranges, otherwise the user might eventually cache the
+// entire assay matrix if they click on enough genes.
 export async function fetchRange(path, start, end) {
   const res = await fetch(wobbegong_url + "/file/" + path, {
     headers: { Range: "bytes=" + String(start) + "-" + String(end - 1) },
