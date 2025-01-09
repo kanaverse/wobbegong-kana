@@ -50,6 +50,8 @@ export async function findExperiments(searchtext, searchpath, searchnum=100) {
 
     const body = await res.json();
     for (const hit of body.results) {
+      let last_dir_pos = hit.path.lastIndexOf("/"); // get rid of the path to the JSON file.
+      hit.path = hit.path.slice(0, last_dir_pos);
       collected.push(hit);
     }
 

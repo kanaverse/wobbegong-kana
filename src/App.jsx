@@ -108,7 +108,16 @@ const App = () => {
     key: 'explore',
     render: (_, record) => (
       <span>
-      <Button type="primary">Explore</Button>
+      <Button type="primary"
+        onClick={async e => {
+          let markers = await wobbegongapi.findMarkerFiles(record.path);
+          console.log(markers);
+          let conversion = await wobbegongapi.convertAllFiles(record.path, markers);
+          console.log(conversion);
+          let mapping = await wobbegongapi.matchMarkersToExperiment(conversion.path, conversion.markers);
+          console.log(mapping);
+        }}
+        >Explore</Button>
       &nbsp;
       <Button 
         onClick={e => {

@@ -1,7 +1,9 @@
-const url = window["kanaConfig"]["wobbegongapi"];
+import * as wob from "wobbegong";
+
+const wobbegong_url = "https://research.gene.com/wobbegong/api/v1";
 
 export async function fetchJson(path) {
-  const res = await fetch(url + "/file/" + path);
+  const res = await fetch(wobbegong_url + "/file/" + path);
   if (!res.ok) {
     throw new Error(
       "oops, failed to retrieve '" + path + "' (" + String(res.status) + ")"
@@ -11,7 +13,7 @@ export async function fetchJson(path) {
 }
 
 export async function fetchRange(path, start, end) {
-  const res = await fetch(url + "/file/" + path, {
+  const res = await fetch(wobbegong_url + "/file/" + path, {
     headers: { Range: "bytes=" + String(start) + "-" + String(end - 1) },
   });
   if (!res.ok) {
@@ -27,8 +29,58 @@ export async function fetchRange(path, start, end) {
   return output.slice(0, end - start); // trim off any excess junk
 }
 
-export async function convertExperiment(path) {
-  const res = await fetch(url + "/convert", {
+const sewerrat_url = "https://research.gene.com/sewerrat/api/v1";
+
+export async function findMarkerFiles(path) {
+  let all_markers = {};
+
+  let parent = path.replace(/\/[^\/]+$/, "");
+  let listing_res = await fetch(sewerrat_url + "/list?path=" + encodeURIComponent(parent) + "&recursive=false")
+  if (!listing_res.ok) {
+    throw new Error("failed to search for marker genes in '" + parent + "'");
+  }
+
+  let listing = await listing_res.json();
+  if (listing.indexOf("markers/") >= 0) {
+    let marker_res = await fetch(sewerrat_url + encodeURIComponent(parent + "/markers") + "&recursive=false")
+    if (!marker_res.ok) {
+      throw new Error("failed to search the 'markers/' subdirectory");
+    }
+    let available = (await marker_res.json()).filter(p => p.endsWith("/")).map(p => "markers/" + p);
+    if (available.length) {
+      all_markers[""] = available;
+    }
+  }
+
+  for (const el of listing) {
+    if (!el.startsWith("markers-") || !el.endsWith("/")) {
+      continue;
+    }
+
+    let leftovers = el.slice(8, el.length - 1);
+    if (leftovers.match(/^[0-9]+$/)) { // for back-compatibility.
+      if (!("" in all_markers)) {
+        all_markers[""] = []
+      }
+      all_markers[""].push(el);
+
+    } else {
+      let marker_res = await fetch(sewerrat_url + encodeURIComponent(parent + "/markers") + "&recursive=false")
+      if (!marker_res.ok) {
+        throw new Error("failed to search the 'markers/' subdirectory");
+      }
+      let available = (await marker_res.json()).filter(p => p.endsWith("/")).map(p => el + p); 
+      if (available.length) {
+        all_markers[leftovers] = available;
+      }
+    }
+  }
+
+  return all_markers;
+}
+
+export async function convertPath(path) {
+  const res = await fetch(wobbegong_url + "/convert", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -36,7 +88,7 @@ export async function convertExperiment(path) {
     body: JSON.stringify({ path: path }),
   });
   if (!res.ok) {
-    throw new Error("oops failed to start conversion");
+    throw new Error("failed to start conversion for '" + path + "'");
   }
 
   const body = await res.json();
@@ -44,16 +96,111 @@ export async function convertExperiment(path) {
   let status = body.status;
   while (status == "PENDING") {
     await new Promise((resolve) => setTimeout(resolve, 2000));
-    const sres = await fetch(url + "/file/" + body.status_path);
+    const sres = await fetch(wobbegong_url + "/file/" + body.status_path);
     if (!sres.ok) {
-      throw new Error("oops failed to poll for completion");
+      throw new Error("failed to poll for completion for '" + path + "'");
     }
     status = (await sres.text()).trimRight();
   }
 
   if (status == "FAILURE") {
-    throw new Error("oops conversion failed");
+    throw new Error("conversion failed for '" + path + "'");
   }
 
   return body.data_path;
+}
+
+export async function convertAllFiles(path, markers) {
+  let parent = path.replace(/\/[^\/]+$/, "");
+
+  let promises = [ convertPath(path) ];
+  for (const [key, val] of Object.entries(markers)) {
+    for (const v of val) {
+      promises.push(convertPath(parent + "/" + v));
+    }
+  }
+
+  let resolved = await Promise.all(promises);
+
+  let new_markers = {};
+  let i = 1;
+  for (const [key, val] of Object.entries(markers)) {
+    let current = [];
+    for (const v of val) {
+      current.push(resolved[i]);
+      i++;
+    }
+    new_markers[key] = current;
+  }
+
+  return { path: resolved[0], markers: new_markers };
+}
+
+export async function matchMarkersToExperiment(converted_path, converted_markers) {
+  // First we take the first entry from each marker type, get its row names, sort them and hash it.
+  const marker_mapping = new Map;
+  for (const [key, val] of Object.entries(converted_markers)) {
+    const df = await wob.load(val[0], fetchJson, fetchRange);
+    if (!df.hasRowNames()) {
+      continue;
+    }
+    let rn = await df.rowNames(); 
+    let existing = marker_mapping.get(rn.length);
+    if (typeof existing == "undefined") {
+      existing = [];
+    }
+    existing.push({ names: rn.toSorted(), key: key });
+    marker_mapping.set(rn.length, existing);
+  }
+
+  // Setting up a function to find a match.
+  let find_match = se_names => {
+    let candidates = marker_mapping.get(se_names.length);
+    if (typeof candidates == "undefined") {
+      return null;
+    }
+
+    let sorted_names = se_names.toSorted();
+    for (const { names, key } of candidates) {
+      let failed = false;
+      for (var i = 0; i < names.length; ++i) {
+        if (names[i] != sorted_names[i]) {
+          failed = true;
+          break
+        }
+      }
+
+      if (!failed) {
+        return key;
+      }
+    }
+
+    return null;
+  };
+
+  // Next we go through the main experiment and pull out its row names.
+  const sce = await wob.load(converted_path, fetchJson, fetchRange);
+  let main = null;
+  if (sce.hasRowData()) {
+    let rd = await sce.rowData();
+    if (rd.hasRowNames()) {
+      main = find_match(await rd.rowNames());
+    }
+  }
+
+  // Ditto for the alternative experiments.
+  let alts = {};
+  if (sce.isSingleCellExperiment()) {
+    const altnames = sce.alternativeExperimentNames();
+    for (const an of altnames) {
+      let ae = await sce.alternativeExperiment(an);
+      if (ae.hasRowNames()) {
+        alts[an] = find_match(await ae.rowNames());
+      } else {
+        alts[an] = null;
+      }
+    }
+  }
+
+  return { main: main, alternative: alts };
 }
