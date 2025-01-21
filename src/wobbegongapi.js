@@ -56,7 +56,7 @@ export async function findMarkerFiles(path) {
 
   let listing = await listing_res.json();
   if (listing.indexOf("markers/") >= 0) {
-    let marker_res = await fetch(sewerrat_url + encodeURIComponent(parent + "/markers") + "&recursive=false")
+    let marker_res = await fetch(sewerrat_url + "/list?path=" + encodeURIComponent(parent + "/markers") + "&recursive=false")
     if (!marker_res.ok) {
       throw new Error("failed to search the 'markers/' subdirectory");
     }
