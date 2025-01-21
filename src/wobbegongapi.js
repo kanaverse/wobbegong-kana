@@ -208,10 +208,12 @@ export async function matchMarkersToExperiment(converted_path, converted_markers
     const altnames = sce.alternativeExperimentNames();
     for (const an of altnames) {
       let ae = await sce.alternativeExperiment(an);
-      if (ae.hasRowNames()) {
-        alts[an] = find_match(await ae.rowNames());
-      } else {
-        alts[an] = null;
+      alts[an] = null;
+      if (ae.hasRowData()) {
+        let ard = await ae.rowData();
+        if (ard.hasRowNames()) {
+          alts[an] = find_match(await ard.rowNames());
+        }
       }
     }
   }
@@ -234,6 +236,11 @@ export function chooseAssay(sce) {
         if (a.toLowerCase().startsWith("count")) {
             return { assay: a, normalize: true };
         }
+    }
+
+    // Sometimes this happens for SEs consisting of large dense matrices.
+    if (all_names.length < 1) {
+        throw new Error("could not find an appropriate assay");
     }
 
     // Otherwise we just return the first assay.
