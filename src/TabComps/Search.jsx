@@ -11,22 +11,27 @@ import {
   Checkbox,
   Table,
   Space,
+  Flex,
 } from "antd";
 const { Header, Content, Sider } = Layout;
 
 import * as wobbegongapi from "../utils/wobbegongapi.js";
-import * as sewerratapi from "../utils/searchapi.js";
+import * as wb from "wobbegong";
 // import { AppContext } from "../AppContext.jsx";
 
 const Search = (props) => {
   // const { tableData, setTableData } = useContext(AppContext);
   const [tableData, setTableData] = useState(null);
   const onSearch = async (values) => {
-    let results = await sewerratapi.findExperiments(
+    let results = await wobbegongapi.findExperiments(
       values["query"],
       values["path"],
       20
     );
+
+    results.forEach((n,i) => {
+      n["key"] = i
+    })
 
     setTableData(results);
   };
@@ -36,31 +41,114 @@ const Search = (props) => {
 
   const tableColumns = [
     {
-      // title: 'Action',
-      key: "action",
-      render: (_, record) => (
-        <Space size="middle">
-          <a onClick={() => props.setAddToExplore(record)}>Explore</a>
-        </Space>
-      ),
-    },
-    {
       title: "Title",
       key: "title",
       render: (_, record) => record.metadata.title,
-      width: "20%",
+      width: "30%",
+    },
+    Table.EXPAND_COLUMN,
+    {
+      title: "Authors",
+      key: "authors",
+      render: (_, record) => {
+        let aut = record.metadata?.authors;
+        if (typeof aut == "undefined") {
+          return "";
+        } else {
+          return aut.join(", ");
+        }
+      },
     },
     {
-      title: "Description",
-      key: "description",
-      render: (_, record) =>
-        sewerratapi.truncate(record.metadata.description, 250),
-      width: "70%",
+      title: "Number of cells",
+      key: "num_cells",
+      render: (_, record) => {
+        let ncols = record.metadata?.object?.summarized_experiment?.columns;
+        if (typeof ncols == "undefined") {
+          return "unknown";
+        } else {
+          return ncols;
+        }
+      },
     },
     {
-      title: "Path",
-      key: "path",
-      render: (_, record) => sewerratapi.breakString(record.path, 50),
+      title: "Assays",
+      key: "red_dims",
+      render: (_, record) => {
+        let rd = record.metadata?.object?.summarized_experiment?.assays;
+        if (typeof rd == "undefined") {
+          return "";
+        } else {
+          return rd.join(", ");
+        }
+      },
+    },
+    {
+      title: "Reduced dimensions",
+      key: "red_dims",
+      render: (_, record) => {
+        let rd =
+          record.metadata?.object?.single_cell_experiment?.reduced_dimensions;
+        if (typeof rd == "undefined") {
+          return "";
+        } else {
+          return rd.join(", ");
+        }
+      },
+    },
+    {
+      title: "Actions",
+      key: "explore",
+      render: (_, record) => (
+        <Flex gap="small" wrap>
+          <Button
+            type="primary"
+            onClick={async (e) => {
+              let markers = await wobbegongapi.findMarkerFiles(record.path);
+              console.log(markers);
+              let conversion = await wobbegongapi.convertAllFiles(
+                record.path,
+                markers
+              );
+              console.log(conversion);
+              let mapping = await wobbegongapi.matchMarkersToExperiment(
+                conversion.path,
+                conversion.markers
+              );
+              console.log(mapping);
+              let sce = await wb.load(
+                conversion.path,
+                wobbegongapi.fetchJson,
+                wobbegongapi.fetchRange
+              );
+              let chosen = wobbegongapi.chooseAssay(sce);
+              console.log(chosen);
+              let ass = await sce.assay(chosen.assay);
+              let vals = await ass.row(0, { asDense: true });
+              if (chosen.normalize) {
+                let sf = await wobbegongapi.computeSizeFactors(ass);
+                console.log(sf);
+                vals = await wobbegongapi.normalizeCounts(vals, sf, true);
+              }
+              console.log(vals);
+            }}
+          >
+            Explore
+          </Button>
+          <Button
+            onClick={(e) => {
+              e.preventDefault();
+              navigator.clipboard.writeText(record.path);
+              api.info({
+                message: `Copied path to clipboard!`,
+                placement: "top",
+              });
+            }}
+          >
+            Copy path
+          </Button>
+        </Flex>
+      ),
       width: "10%",
     },
   ];
@@ -88,10 +176,7 @@ const Search = (props) => {
   return (
     <>
       <Content>
-        <p>
-          Search <a href="https://github.roche.com/GP/LunaticDB">LunaticDB</a>{" "}
-          for interesting single-cell datasets.
-        </p>
+        <p></p>
         <p>
           For metadata queries, we can use <code>AND</code>, <code>OR</code>,
           and <code>NOT</code> along with parentheses, e.g.,{" "}
@@ -138,7 +223,39 @@ const Search = (props) => {
         </Form>
       </Content>
 
-      {render_search_results(tableData)}
+      {tableData !== null ? (
+        <>
+          {Array.isArray(tableData) && tableData.length > 0 ? (
+            <Table
+              dataSource={tableData}
+              columns={tableColumns}
+              style={{ wordWrap: "break-word" }}
+              expandable={{
+                expandedRowRender: (record) => (
+                  <p
+                    style={{
+                      margin: 0,
+                    }}
+                  >
+                    <span>
+                      <strong>Description:</strong>{" "}
+                      {record.metadata.description}
+                    </span>
+                    <br />
+                    <span>
+                      <strong>Path:</strong> {record.path}
+                    </span>
+                  </p>
+                ),
+              }}
+            />
+          ) : (
+            <div>No datasets available for this search.</div>
+          )}
+        </>
+      ) : (
+        <></>
+      )}
     </>
   );
 };
