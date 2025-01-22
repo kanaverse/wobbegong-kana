@@ -276,7 +276,7 @@ export function normalizeCounts(values, size_factors, log) {
 
     if (log) {
         for (var i = 0; i < values.length; i++) {
-            copy[i] = Math.log2(copy[i]);
+            copy[i] = Math.log1p(copy[i]) / Math.log(2);
         }
     }
 
