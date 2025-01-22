@@ -13,11 +13,12 @@ import {
   Space,
   notification,
 } from "antd";
-import { SearchOutlined } from "@ant-design/icons";
+import { SearchOutlined, BulbOutlined } from "@ant-design/icons";
 const { Header, Content, Sider } = Layout;
 
 import Explorer from "./TabComps/Explorer.jsx";
 import Search from "./TabComps/Search.jsx";
+import * as wobbegongapi from "./utils/wobbegongapi.js"
 // import { AppContext } from "./AppContext.jsx";
 
 const App = () => {
@@ -35,12 +36,14 @@ const App = () => {
 
     const newPanes = [...tabItems];
     newPanes.push({
-      label: "Explore " + record.metadata.title,
+      key: record.key,
+      label: "Explore " + wobbegongapi.truncateString(record.metadata.title, 25),
+      // closable: true,
+      icon: <BulbOutlined />,
       children: <Explorer record={record} />,
-      key: record.path,
     });
     setTabItems(newPanes);
-    setActiveKey(record.path);
+    setActiveKey(record.key);
   };
 
   const onTabChange = (key) => {

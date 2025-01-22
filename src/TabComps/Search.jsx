@@ -16,7 +16,6 @@ import {
 const { Header, Content, Sider } = Layout;
 
 import * as wobbegongapi from "../utils/wobbegongapi.js";
-import * as wb from "wobbegong";
 // import { AppContext } from "../AppContext.jsx";
 
 const Search = (props) => {
@@ -58,6 +57,7 @@ const Search = (props) => {
           return aut.join(", ");
         }
       },
+      width: "10%",
     },
     {
       title: "Number of cells",
@@ -70,6 +70,7 @@ const Search = (props) => {
           return ncols;
         }
       },
+      width: "10%",
     },
     {
       title: "Assays",
@@ -82,6 +83,7 @@ const Search = (props) => {
           return rd.join(", ");
         }
       },
+      width: "15%",
     },
     {
       title: "Reduced dimensions",
@@ -95,6 +97,7 @@ const Search = (props) => {
           return rd.join(", ");
         }
       },
+      width: "15%",
     },
     {
       title: "Actions",
@@ -104,33 +107,7 @@ const Search = (props) => {
           <Button
             type="primary"
             onClick={async (e) => {
-              let markers = await wobbegongapi.findMarkerFiles(record.path);
-              console.log(markers);
-              let conversion = await wobbegongapi.convertAllFiles(
-                record.path,
-                markers
-              );
-              console.log(conversion);
-              let mapping = await wobbegongapi.matchMarkersToExperiment(
-                conversion.path,
-                conversion.markers
-              );
-              console.log(mapping);
-              let sce = await wb.load(
-                conversion.path,
-                wobbegongapi.fetchJson,
-                wobbegongapi.fetchRange
-              );
-              let chosen = wobbegongapi.chooseAssay(sce);
-              console.log(chosen);
-              let ass = await sce.assay(chosen.assay);
-              let vals = await ass.row(0, { asDense: true });
-              if (chosen.normalize) {
-                let sf = await wobbegongapi.computeSizeFactors(ass);
-                console.log(sf);
-                vals = await wobbegongapi.normalizeCounts(vals, sf, true);
-              }
-              console.log(vals);
+              props.setAddToExplore(record);
             }}
           >
             Explore
@@ -149,29 +126,9 @@ const Search = (props) => {
           </Button>
         </Flex>
       ),
-      width: "10%",
+      width: "20%",
     },
   ];
-
-  function render_search_results() {
-    console.log(tableData);
-
-    return (
-      <>
-        {tableData !== null ? (
-          <>
-            {Array.isArray(tableData) && tableData.length > 0 ? (
-              <Table dataSource={tableData} columns={tableColumns} />
-            ) : (
-              <div>No datasets available for this search.</div>
-            )}
-          </>
-        ) : (
-          <></>
-        )}
-      </>
-    );
-  }
 
   return (
     <>
