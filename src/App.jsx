@@ -92,6 +92,7 @@ const App = () => {
         style={{
           display: "flex",
           alignItems: "center",
+          backgroundColor: "#f4f4f4"
         }}
       >
         <h2>
