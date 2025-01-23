@@ -19,6 +19,7 @@ import {
   Flex,
   Splitter,
   Typography,
+  List,
 } from "antd";
 const { Header, Content, Sider } = Layout;
 import { DatabaseTwoTone, DownOutlined } from "@ant-design/icons";
@@ -29,7 +30,7 @@ import WebGLVis from "epiviz.gl";
 
 import Rainbow from "../utils/rainbowvis.js";
 import { randomColor } from "randomcolor";
-import { defaultColor, getMinMax } from "../utils/plotutils.js";
+import { defaultColor, getMinMax, getGradient } from "../utils/plotutils.js";
 import { generateColors } from "../utils/colors.js";
 import { SVGDimPlot } from "../utils/SVGDimPlot.js";
 
@@ -44,21 +45,46 @@ const Explorer = (props) => {
   // SCE object of the choosen dataset
   const [sce, setSce] = useState(null);
 
+  // #### ROW DATA ####
+  const [rowData, setRowData] = useState(null);
+  // available row names
+  const [rowNamesUI, setRowNamesUI] = useState(null);
+  // user selected row name to display
+  const [selectedRowNameUI, setSelectedRowNameUI] = useState(null);
+  // rowdata to cache and plot
+  const [rowdataCache, setRowdataCache] = useState({});
+
+  // #### COLUMN DATA ####
+  const [columnData, setColumnData] = useState(null);
+  // available column names
+  const [colNamesUI, setColNamesUI] = useState(null);
+  // user selected column name to color by
+  const [selectedColNameUI, setSelectedColNameUI] = useState(null);
+  // coldata to cache and plot
+  const [coldataCache, setColdataCache] = useState({});
+
+  // #### EMBEDDINGS ####
   // available embeddings
   const [redDimNamesUI, setRedDimNamesUI] = useState(null);
-
   // user selected embedding
   const [selectedredDimNamesUI, setSelectedredDimNamesUI] = useState(null);
-
   // embedding to cache and plot
   const [embeddings, setEmbeddings] = useState({});
+
+  // #### PLOT CONTAINER ####
   // ref to the plot dom container
   const embeddingContainer = useRef();
   // ref to the plot object
   const [scatterplot, setScatterplot] = useState(null);
   // flag to signal ready for plotting
   const [readyToPlot, setReadyToPlot] = useState(false);
+  // plot color mappings for categorical/string columns
+  const [plotIsGradient, setPlotIsGradient] = useState(null);
+  const [plotColorMapper, setPlotColorMapper] = useState(null);
+  const [plotColorGradient, setPlotColorGradient] = useState(null);
+  const [plotColorGradientMinMax, setPlotColorGradientMinMax] = useState(null);
 
+  // #### ASSAY ####
   const [chooseAssayUI, setChooseAssayUI] = useState(null);
   const [assay, setAssay] = useState(null);
   const [nomalizeCountsUI, setNormalizeCountsUI] = useState(null);
@@ -84,17 +110,65 @@ const Explorer = (props) => {
         wobbegongapi.fetchJson,
         wobbegongapi.fetchRange
       );
-      let rednames = [];
-      sce.reducedDimensionNames().forEach((x, i) => {
-        rednames.push({ key: String(i), label: x });
-      });
-      setRedDimNamesUI(rednames);
-      setSelectedredDimNamesUI("0");
+
+      let row_data = await sce.rowData();
+      if (row_data !== null) {
+        let rnames = [];
+        row_data.columnNames().forEach((x, i) => {
+          rnames.push({ key: String(i), label: x });
+        });
+        setRowData(row_data);
+        setRowNamesUI(rnames);
+        setSelectedRowNameUI("0");
+      }
+
+      let column_data = await sce.columnData();
+      if (column_data !== null) {
+        let cnames = [];
+        column_data.columnNames().forEach((x, i) => {
+          cnames.push({ key: String(i), label: x });
+        });
+        setColumnData(column_data);
+        setColNamesUI(cnames);
+        setSelectedColNameUI("0");
+      }
+
+      let red_names = await sce.reducedDimensionNames();
+      if (red_names !== null) {
+        let rednames = [];
+        sce.reducedDimensionNames().forEach((x, i) => {
+          rednames.push({ key: String(i), label: x });
+        });
+        setRedDimNamesUI(rednames);
+        setSelectedredDimNamesUI("0");
+      }
       setSce(sce);
     }
 
     fetchData();
   }, []);
+
+  // when an column is selected
+  useEffect(() => {
+    async function fetchData() {
+      const colKey = colNamesUI[parseInt(selectedColNameUI)]["label"];
+
+      let output = await columnData.column(colKey, { type: true });
+
+      let col_data = { ...coldataCache };
+      col_data[colKey] = output;
+      setColdataCache(col_data);
+      setReadyToPlot(true);
+    }
+
+    if (sce !== null) {
+      const colKey = colNamesUI[parseInt(selectedColNameUI)]["label"];
+
+      if (!(colKey in coldataCache)) {
+        fetchData();
+      }
+    }
+  }, [selectedColNameUI]);
 
   // when an embedding is selected
   // only access the first two dimensions
@@ -166,9 +240,59 @@ const Explorer = (props) => {
         }
 
         let plot_colors = [];
+        const colKey = colNamesUI[parseInt(selectedColNameUI)]["label"];
 
         for (let i = 0; i < data.x.length; i++) {
-          plot_colors[i] = "#729ECE";
+          console.log(coldataCache);
+          if (colKey in coldataCache) {
+            const _col = coldataCache[colKey];
+            if (_col.type == "string") {
+              let uvals = [...new Set(_col.value)];
+              let colors = generateColors(uvals.length);
+              let color_mapper = {};
+              for (let i = 0; i < _col.value.length; i++) {
+                if (!(_col.value[i] in color_mapper)) {
+                  color_mapper[_col.value[i]] =
+                    colors[Object.keys(color_mapper).length];
+                }
+
+                plot_colors[i] = color_mapper[_col.value[i]];
+              }
+              setPlotIsGradient(false);
+              setPlotColorMapper(color_mapper);
+            } else if (
+              _col.type == "number" ||
+              _col.type == "integer" ||
+              _col.type == "double"
+            ) {
+              let valMinMax = getMinMax(_col.value);
+              let gradient = getGradient(valMinMax[0], valMinMax[1]);
+              for (let i = 0; i < _col.value.length; i++) {
+                plot_colors[i] = "#" + gradient.colorAt(_col.value[i]);
+              }
+              setPlotIsGradient(true);
+              setPlotColorGradient(gradient);
+              setPlotColorGradientMinMax(valMinMax);
+            } else if (_col.type == "factor") {
+              let colors = generateColors(_col.value.levels.length);
+              let color_mapper = {};
+              for (let i = 0; i < _col.value.levels.length; i++) {
+                if (!(_col.value.levels[i] in color_mapper)) {
+                  color_mapper[_col.value.levels[i]] =
+                    colors[Object.keys(color_mapper).length];
+                }
+              }
+
+              for (let i = 0; i < _col.value.codes.length; i++) {
+                plot_colors[i] =
+                  color_mapper[_col.value.levels[_col.value.codes[i]]];
+              }
+              setPlotIsGradient(false);
+              setPlotColorMapper(color_mapper);
+            }
+          } else {
+            plot_colors[i] = "#729ECE";
+          }
         }
 
         let xMinMax = getMinMax(data.x);
@@ -263,10 +387,14 @@ const Explorer = (props) => {
         setReadyToPlot(false);
       }
     }
-  }, [readyToPlot, embeddings]);
+  }, [readyToPlot, embeddings, selectedColNameUI, selectedredDimNamesUI]);
 
   function onRedDimSelectionChange(obj) {
     setSelectedredDimNamesUI(obj.key);
+  }
+
+  function onColNameSelectionChange(obj) {
+    setSelectedColNameUI(obj.key);
   }
 
   return (
@@ -277,7 +405,7 @@ const Explorer = (props) => {
           {
             key: "1",
             label: "Dataset Info",
-            items: (
+            children: (
               <>
                 {" "}
                 <p>
@@ -288,7 +416,7 @@ const Explorer = (props) => {
                 </p>
                 <p>{record.metadata.description}</p>
                 <p>{record.path}</p>
-                <p>soemthing else</p>
+                <p>something else</p>
               </>
             ),
           },
@@ -296,7 +424,6 @@ const Explorer = (props) => {
       />
       {redDimNamesUI && sce && (
         <>
-          {console.log(redDimNamesUI)}
           Visualizing{" "}
           <Dropdown
             menu={{
@@ -314,6 +441,26 @@ const Explorer = (props) => {
               </Space>
             </a>
           </Dropdown>
+          , Color By{" "}
+          <Dropdown
+            menu={{
+              items: colNamesUI,
+              selectable: true,
+              defaultSelectedKeys: [selectedColNameUI],
+              onSelect: onColNameSelectionChange,
+              style: {
+                height: 300,
+              },
+            }}
+            trigger={["click"]}
+          >
+            <a onClick={(e) => e.preventDefault()}>
+              <Space>
+                {colNamesUI[parseInt(selectedColNameUI)]["label"]}
+                <DownOutlined />
+              </Space>
+            </a>
+          </Dropdown>
         </>
       )}
       <Flex gap="middle" vertical>
@@ -325,33 +472,96 @@ const Explorer = (props) => {
           }}
         >
           <Splitter.Panel min="30%">
-            <Flex
-              justify="center"
-              align="center"
-              style={{
-                height: "100%",
-              }}
-            >
-              <div
-                className="dim-plot"
-                style={{
-                  width: "90%",
-                  height: "90%",
-                }}
-              >
-                {embeddings ? (
+            <Splitter layout="vertical">
+              <Splitter.Panel defaultSize="75%">
+                <Flex
+                  justify="center"
+                  align="center"
+                  style={{
+                    height: "100%",
+                  }}
+                >
                   <div
-                    ref={embeddingContainer}
+                    className="dim-plot"
                     style={{
-                      width: "100%",
-                      height: "100%",
+                      width: "90%",
+                      height: "90%",
                     }}
-                  ></div>
-                ) : (
-                  "Choose an Embedding... or Embeddings are being fetched..."
-                )}
-              </div>
-            </Flex>
+                  >
+                    {embeddings ? (
+                      <div
+                        ref={embeddingContainer}
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                        }}
+                      ></div>
+                    ) : (
+                      "Choose an Embedding... or Embeddings are being fetched..."
+                    )}
+                  </div>
+                </Flex>
+              </Splitter.Panel>
+              <Splitter.Panel defaultSize="100px" min="100px">
+                <>
+                  Legend
+                  {plotIsGradient && scatterplot ? (
+                    <>
+                      <p>
+                        Column{" "}
+                        <Typography.Text keyboard>
+                          {colNamesUI[parseInt(selectedColNameUI)]["label"]}
+                        </Typography.Text>{" "}
+                        is numerical, using a gradient
+                        <Typography.Text code>
+                          [min:{plotColorGradientMinMax[0]}, max:
+                          {plotColorGradientMinMax[1]}]
+                        </Typography.Text>
+                      </p>
+                      <div
+                        style={{
+                          backgroundImage: `linear-gradient(to right, #F5F8FA 0%, 50%, #2965CC 100%)`,
+                          width: "145px",
+                          height: "15px",
+                          marginLeft: "4px",
+                        }}
+                      ></div>
+                    </>
+                  ) : (
+                    <>
+                      {plotColorMapper && (
+                        <p>
+                          Column{" "}
+                          <Typography.Text keyboard>
+                            {colNamesUI[parseInt(selectedColNameUI)]["label"]}
+                          </Typography.Text>{" "}
+                          contains{" "}
+                          <Typography.Text>
+                            {Object.keys(plotColorMapper).length}
+                          </Typography.Text>{" "}
+                          unique value{""}
+                          {Object.keys(plotColorMapper).length > 1 ? "s:" : ":"}
+                          <Flex wrap gap="small">
+                            {Array.from(
+                              Object.keys(plotColorMapper),
+                              (item, i) => (
+                                <Typography.Text
+                                  style={{
+                                    color: plotColorMapper[item],
+                                  }}
+                                >
+                                  {item}
+                                </Typography.Text>
+                              )
+                            )}
+                          </Flex>
+                        </p>
+                      )}
+                    </>
+                  )}
+                </>
+              </Splitter.Panel>
+            </Splitter>
           </Splitter.Panel>
           <Splitter.Panel min="20%">
             <Flex

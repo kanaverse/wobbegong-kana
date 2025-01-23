@@ -194,14 +194,15 @@ export function getFactorsFromArray(col) {
 
 export function getGradient(min, max) {
   let tmpgradient = new Rainbow();
-  tmpgradient.setSpectrum(
-    "#edc775",
-    "#e09351",
-    "#df7e66",
-    "#b75347",
-    "#6d2f20"
-  );
+  // tmpgradient.setSpectrum(
+  //   "#edc775",
+  //   "#e09351",
+  //   "#df7e66",
+  //   "#b75347",
+  //   "#6d2f20"
+  // );
+  tmpgradient.setSpectrum("#F5F8FA", "#2965CC");
   tmpgradient.setNumberRange(min, max);
 
-  return tmpgradient
+  return tmpgradient;
 }
