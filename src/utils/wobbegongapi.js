@@ -352,12 +352,14 @@ export async function findExperiments(searchtext, searchpath, searchnum = 100) {
   query.push({ type: "text", text: searchtext });
 
   if (
-    typeof searchpath != "undefiend" &&
+    typeof searchpath != "undefined" &&
     searchpath != null &&
     searchpath != ""
   ) {
     query.push({ type: "path", path: searchpath });
   }
+
+  query.push({ type: "text", text: "object.single_cell_experiment.reduced_dimensions: *" })
 
   if (query.length != 1) {
     query = { type: "and", children: query };
