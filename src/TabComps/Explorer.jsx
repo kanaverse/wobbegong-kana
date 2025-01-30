@@ -85,9 +85,11 @@ const Explorer = (props) => {
   const [plotColorGradientMinMax, setPlotColorGradientMinMax] = useState(null);
 
   // #### ASSAY ####
-  const [chooseAssayUI, setChooseAssayUI] = useState(null);
+  const [assayNamesUI, setAssayNamesUI] = useState(null);
+  const [selectedAssayNameUI, setSelectedAssayNameUI] = useState(null);
+  const [normalizeUI, setNormalizeUI] = useState(null);
+
   const [assay, setAssay] = useState(null);
-  const [nomalizeCountsUI, setNormalizeCountsUI] = useState(null);
   const [expression, setExpression] = useState(null);
 
   useEffect(() => {
@@ -97,14 +99,11 @@ const Explorer = (props) => {
     // when the component is Loaded
     async function fetchData() {
       let markers = await wobbegongapi.findMarkerFiles(record.path);
-      console.log(markers);
       let conversion = await wobbegongapi.convertAllFiles(record.path, markers);
-      console.log(conversion);
       let mapping = await wobbegongapi.matchMarkersToExperiment(
         conversion.path,
         conversion.markers
       );
-      console.log(mapping);
       let sce = await wb.load(
         conversion.path,
         wobbegongapi.fetchJson,
@@ -133,10 +132,27 @@ const Explorer = (props) => {
         setSelectedColNameUI("0");
       }
 
+      let assay_names = await sce.assayNames();
+      let chosen = wobbegongapi.chooseAssay(sce);
+
+      if (assay_names !== null) {
+        let asynames = [];
+        let chosen_index = null;
+        assay_names.forEach((x, i) => {
+          asynames.push({ key: String(i), label: x });
+          if (chosen.assay == x) {
+            chosen_index = String(i);
+          }
+        });
+        setAssayNamesUI(asynames);
+        setSelectedAssayNameUI(chosen_index);
+        setNormalizeUI(chosen.normalize);
+      }
+
       let red_names = await sce.reducedDimensionNames();
       if (red_names !== null) {
         let rednames = [];
-        sce.reducedDimensionNames().forEach((x, i) => {
+        red_names.forEach((x, i) => {
           rednames.push({ key: String(i), label: x });
         });
         setRedDimNamesUI(rednames);
@@ -197,6 +213,28 @@ const Explorer = (props) => {
     }
   }, [selectedredDimNamesUI]);
 
+  // When an Assay for selected
+  useEffect(() => {
+    // apparently a new way to call async functions within components
+    // to keep react happy
+    async function fetchData() {
+      let ass = await sce.assay(
+        assayNamesUI[parseInt(selectedAssayNameUI)]["label"]
+      );
+      let vals = await ass.row(0, { asDense: true });
+      if (normalizeUI) {
+        let sf = await wobbegongapi.computeSizeFactors(ass);
+        console.log(sf);
+        vals = wobbegongapi.normalizeCounts(vals, sf, true);
+      }
+      console.log(vals);
+    }
+
+    if (sce !== null) {
+      fetchData();
+    }
+  }, [selectedAssayNameUI]);
+
   // useEffect(() => {
   //   // apparently a new way to call async functions within components
   //   // to keep react happy
@@ -209,7 +247,7 @@ const Explorer = (props) => {
   //     if (chosen.normalize) {
   //       let sf = await wobbegongapi.computeSizeFactors(ass);
   //       console.log(sf);
-  //       vals = await wobbegongapi.normalizeCounts(vals, sf, true);
+  //       vals = wobbegongapi.normalizeCounts(vals, sf, true);
   //     }
   //     console.log(vals);
   //   }
@@ -243,7 +281,6 @@ const Explorer = (props) => {
         const colKey = colNamesUI[parseInt(selectedColNameUI)]["label"];
 
         for (let i = 0; i < data.x.length; i++) {
-          console.log(coldataCache);
           if (colKey in coldataCache) {
             const _col = coldataCache[colKey];
             if (_col.type == "string") {
@@ -397,6 +434,14 @@ const Explorer = (props) => {
     setSelectedColNameUI(obj.key);
   }
 
+  function onAssaySelectionChange(obj) {
+    setSelectedAssayNameUI(obj.key);
+  }
+
+  function onNomalizeUIChange(obj) {
+    setNormalizeUI(obj.target.checked);
+  }
+
   return (
     <Content>
       <Collapse
@@ -461,6 +506,33 @@ const Explorer = (props) => {
               </Space>
             </a>
           </Dropdown>
+        </>
+      )}
+      {assayNamesUI && sce && selectedAssayNameUI && (
+        <>
+          {" "}
+          Explore assay:{" "}
+          <Dropdown
+            menu={{
+              items: assayNamesUI,
+              selectable: true,
+              defaultSelectedKeys: [selectedAssayNameUI],
+              onSelect: onAssaySelectionChange,
+            }}
+            trigger={["click"]}
+          >
+            <a onClick={(e) => e.preventDefault()}>
+              <Space>
+                {assayNamesUI[parseInt(selectedAssayNameUI)]["label"]}
+                <DownOutlined />
+              </Space>
+            </a>
+          </Dropdown>{" "}
+          {normalizeUI !== null && (
+            <Checkbox checked={normalizeUI} onChange={onNomalizeUIChange}>
+              Normalize ?
+            </Checkbox>
+          )}
         </>
       )}
       <Flex gap="middle" vertical>
@@ -546,6 +618,7 @@ const Explorer = (props) => {
                               Object.keys(plotColorMapper),
                               (item, i) => (
                                 <Typography.Text
+                                  key={i}
                                   style={{
                                     color: plotColorMapper[item],
                                   }}
