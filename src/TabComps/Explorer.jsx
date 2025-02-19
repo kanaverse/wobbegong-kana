@@ -182,6 +182,8 @@ const Explorer = (props) => {
 
       if (!(colKey in coldataCache)) {
         fetchData();
+      } else {
+        setReadyToPlot(true);
       }
     }
   }, [selectedColNameUI]);
@@ -227,7 +229,6 @@ const Explorer = (props) => {
         console.log(sf);
         vals = wobbegongapi.normalizeCounts(vals, sf, true);
       }
-      console.log(vals);
     }
 
     if (sce !== null) {
