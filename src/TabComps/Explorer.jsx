@@ -37,11 +37,6 @@ import { SVGDimPlot } from "../utils/SVGDimPlot.js";
 const Explorer = (props) => {
   const { record } = props;
 
-  // marker related
-  const [markerFiles, setMarkerFiles] = useState(null);
-  const [markersConvertedFiles, setMarkersConvertedFiles] = useState(null);
-  const [markersToExptMapping, setMarkersToExptMapping] = useState(null);
-
   // SCE object of the choosen dataset
   const [sce, setSce] = useState(null);
 
@@ -49,7 +44,7 @@ const Explorer = (props) => {
   const [rowData, setRowData] = useState(null);
   // available row names
   const [rowNamesUI, setRowNamesUI] = useState(null);
-  // user selected row name to display
+  // user selected row names to display
   const [selectedRowNameUI, setSelectedRowNameUI] = useState(null);
   // rowdata to cache and plot
   const [rowdataCache, setRowdataCache] = useState({});
@@ -92,6 +87,22 @@ const Explorer = (props) => {
   const [assay, setAssay] = useState(null);
   const [expression, setExpression] = useState(null);
 
+  // #### MARKERS ####
+  // flag to signal ready for table
+  const [readyToTable, setReadyToTable] = useState(false);
+  // marker related
+  const [markerFiles, setMarkerFiles] = useState(null);
+  const [markersConvertedFiles, setMarkersConvertedFiles] = useState(null);
+  const [markersToExptMapping, setMarkersToExptMapping] = useState(null);
+  const [markerData, setMarkerData] = useState(null);
+  const [markerDataColumns, setMarkerDataColumns] = useState([
+    {
+      title: "rownames",
+      key: "rowname",
+      dataIndex: "rowname",
+    },
+  ]);
+
   useEffect(() => {
     // apparently a new way to call async functions within useEffects
     // to keep react happy
@@ -113,9 +124,25 @@ const Explorer = (props) => {
       let row_data = await sce.rowData();
       if (row_data !== null) {
         let rnames = [];
+        rnames.push({ key: String(0), label: "rownames" });
         row_data.columnNames().forEach((x, i) => {
-          rnames.push({ key: String(i), label: x });
+          rnames.push({ key: String(i + 1), label: x });
         });
+
+        let rownamedata = await row_data.rowNames();
+        let r_data = { ...rowdataCache };
+        r_data["rownames"] = rownamedata;
+        setRowdataCache(r_data);
+
+        let _mdata = [];
+        for (let i = 0; i < rownamedata.length; i++) {
+          _mdata.push({
+            key: i,
+            rowname: rownamedata[i],
+          });
+        }
+        setMarkerData(_mdata);
+
         setRowData(row_data);
         setRowNamesUI(rnames);
         setSelectedRowNameUI("0");
@@ -258,8 +285,31 @@ const Explorer = (props) => {
   //   }
   // }, [sce]);
 
-  // rendering the embedding plot
+  // when a row columnname changes
+  useEffect(() => {
+    async function fetchData() {
+      const rowKey = rowNamesUI[parseInt(selectedRowNameUI)]["label"];
 
+      let output = await rowData.column(rowKey, { type: true });
+
+      let row_data = { ...rowdataCache };
+      row_data[rowKey] = output;
+      setRowdataCache(row_data);
+      setReadyToTable(true);
+    }
+
+    if (sce !== null) {
+      const rowKey = rowNamesUI[parseInt(selectedRowNameUI)]["label"];
+
+      if (!(rowKey in rowdataCache)) {
+        fetchData();
+      } else {
+        setReadyToTable(true);
+      }
+    }
+  }, [selectedRowNameUI]);
+
+  // rendering the embedding plot
   useEffect(() => {
     const containerEl = embeddingContainer.current;
 
@@ -645,7 +695,15 @@ const Explorer = (props) => {
                 height: "100%",
               }}
             >
-              Markers
+              {Array.isArray(markerData) && markerData.length > 0 ? (
+                <Table
+                  dataSource={markerData}
+                  columns={markerDataColumns}
+                  style={{ wordWrap: "break-word" }}
+                />
+              ) : (
+                <div>No row data or markers available for this dataset.</div>
+              )}
             </Flex>
           </Splitter.Panel>
         </Splitter>
