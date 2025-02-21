@@ -28,9 +28,9 @@ const Search = (props) => {
       20
     );
 
-    results.forEach((n,i) => {
-      n["key"] = i
-    })
+    results.forEach((n, i) => {
+      n["key"] = i;
+    });
 
     setTableData(results);
   };

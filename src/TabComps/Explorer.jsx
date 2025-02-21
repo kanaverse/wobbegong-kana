@@ -30,7 +30,13 @@ import WebGLVis from "epiviz.gl";
 
 import Rainbow from "../utils/rainbowvis.js";
 import { randomColor } from "randomcolor";
-import { defaultColor, getMinMax, getGradient } from "../utils/plotutils.js";
+import {
+  defaultColor,
+  getMinMax,
+  getGradient,
+  sortWithIndices,
+  sortArrayByIndices,
+} from "../utils/plotutils.js";
 import { generateColors } from "../utils/colors.js";
 import { SVGDimPlot } from "../utils/SVGDimPlot.js";
 
@@ -94,14 +100,26 @@ const Explorer = (props) => {
   const [markerFiles, setMarkerFiles] = useState(null);
   const [markersConvertedFiles, setMarkersConvertedFiles] = useState(null);
   const [markersToExptMapping, setMarkersToExptMapping] = useState(null);
-  const [markerData, setMarkerData] = useState(null);
+  // marker table data
+  const [markerData, setMarkerData] = useState([]);
   const [markerDataColumns, setMarkerDataColumns] = useState([
     {
       title: "rownames",
       key: "rowname",
       dataIndex: "rowname",
+      onFilter: (value, record) => record.rowname.includes(value),
+      filterSearch: true,
     },
   ]);
+  // ref to the dom
+  const markerTableRef = React.useRef(null);
+  // setting in params for height and width of the vistual scroll
+  const [markerTableUIScroll, setMarkerTableUIScroll] = useState({
+    x: 500,
+    y: 500,
+  });
+  // selected gene
+  const [markerTableSelection, setMarkerTableSelection] = useState([]);
 
   useEffect(() => {
     // apparently a new way to call async functions within useEffects
@@ -142,6 +160,26 @@ const Explorer = (props) => {
           });
         }
         setMarkerData(_mdata);
+
+        setMarkerTableUIScroll({
+          x: markerTableRef.current.parentElement.clientWidth - 15,
+          y: markerTableRef.current.parentElement.clientHeight - 70,
+        });
+
+        if (window.markertableObserver) {
+          window.markertableObserver.disconnect();
+        }
+
+        window.markertableObserver = new ResizeObserver(() => {
+          setMarkerTableUIScroll({
+            x: markerTableRef.current.parentElement.clientWidth - 15,
+            y: markerTableRef.current.parentElement.clientHeight - 70,
+          });
+        });
+
+        window.markertableObserver.observe(
+          markerTableRef.current.parentElement
+        );
 
         setRowData(row_data);
         setRowNamesUI(rnames);
@@ -250,18 +288,33 @@ const Explorer = (props) => {
       let ass = await sce.assay(
         assayNamesUI[parseInt(selectedAssayNameUI)]["label"]
       );
-      let vals = await ass.row(0, { asDense: true });
-      if (normalizeUI) {
-        let sf = await wobbegongapi.computeSizeFactors(ass);
-        console.log(sf);
-        vals = wobbegongapi.normalizeCounts(vals, sf, true);
-      }
+      setAssay(ass);
     }
 
     if (sce !== null) {
       fetchData();
     }
   }, [selectedAssayNameUI]);
+
+  // when a marker is selected
+  useEffect(() => {
+    async function fetchData() {
+      if (assay !== null && markerTableSelection !== null) {
+        let vals = await assay.row(markerTableSelection[0], { asDense: true });
+        if (normalizeUI) {
+          let sf = await wobbegongapi.computeSizeFactors(assay);
+          vals = wobbegongapi.normalizeCounts(vals, sf, true);
+        }
+
+        setExpression(vals);
+        setReadyToPlot(true);
+      }
+    }
+
+    if (sce !== null) {
+      fetchData();
+    }
+  }, [markerTableSelection, assay, normalizeUI]);
 
   // useEffect(() => {
   //   // apparently a new way to call async functions within components
@@ -330,55 +383,71 @@ const Explorer = (props) => {
 
         let plot_colors = [];
         const colKey = colNamesUI[parseInt(selectedColNameUI)]["label"];
+        let sort_order = null;
 
-        for (let i = 0; i < data.x.length; i++) {
-          if (colKey in coldataCache) {
-            const _col = coldataCache[colKey];
-            if (_col.type == "string") {
-              let uvals = [...new Set(_col.value)];
-              let colors = generateColors(uvals.length);
-              let color_mapper = {};
-              for (let i = 0; i < _col.value.length; i++) {
-                if (!(_col.value[i] in color_mapper)) {
-                  color_mapper[_col.value[i]] =
-                    colors[Object.keys(color_mapper).length];
-                }
+        if (expression !== null) {
+          let valMinMax = getMinMax(expression);
+          let gradient = getGradient(valMinMax[0], valMinMax[1]);
+          sort_order = sortWithIndices(expression);
 
-                plot_colors[i] = color_mapper[_col.value[i]];
-              }
-              setPlotIsGradient(false);
-              setPlotColorMapper(color_mapper);
-            } else if (
-              _col.type == "number" ||
-              _col.type == "integer" ||
-              _col.type == "double"
-            ) {
-              let valMinMax = getMinMax(_col.value);
-              let gradient = getGradient(valMinMax[0], valMinMax[1]);
-              for (let i = 0; i < _col.value.length; i++) {
-                plot_colors[i] = "#" + gradient.colorAt(_col.value[i]);
-              }
-              setPlotIsGradient(true);
-              setPlotColorGradient(gradient);
-              setPlotColorGradientMinMax(valMinMax);
-            } else if (_col.type == "factor") {
-              let colors = generateColors(_col.value.levels.length);
-              let color_mapper = {};
-              for (let i = 0; i < _col.value.levels.length; i++) {
-                if (!(_col.value.levels[i] in color_mapper)) {
-                  color_mapper[_col.value.levels[i]] =
-                    colors[Object.keys(color_mapper).length];
-                }
+          for (let i = 0; i < expression.length; i++) {
+            plot_colors[i] = "#" + gradient.colorAt(expression[i]);
+          }
+          setPlotIsGradient(true);
+          setPlotColorGradient(gradient);
+          setPlotColorGradientMinMax(valMinMax);
+        } else if (colKey in coldataCache) {
+          const _col = coldataCache[colKey];
+          if (_col.type == "string") {
+            let uvals = [...new Set(_col.value)];
+            let colors = generateColors(uvals.length);
+            let color_mapper = {};
+            for (let i = 0; i < _col.value.length; i++) {
+              if (!(_col.value[i] in color_mapper)) {
+                color_mapper[_col.value[i]] =
+                  colors[Object.keys(color_mapper).length];
               }
 
-              for (let i = 0; i < _col.value.codes.length; i++) {
-                plot_colors[i] =
-                  color_mapper[_col.value.levels[_col.value.codes[i]]];
-              }
-              setPlotIsGradient(false);
-              setPlotColorMapper(color_mapper);
+              plot_colors[i] = color_mapper[_col.value[i]];
             }
-          } else {
+
+            setPlotIsGradient(false);
+            setPlotColorMapper(color_mapper);
+          } else if (
+            _col.type == "number" ||
+            _col.type == "integer" ||
+            _col.type == "double"
+          ) {
+            let valMinMax = getMinMax(_col.value);
+            let gradient = getGradient(valMinMax[0], valMinMax[1]);
+
+            sort_order = sortWithIndices(_col.value);
+
+            for (let i = 0; i < _col.value.length; i++) {
+              plot_colors[i] = "#" + gradient.colorAt(_col.value[i]);
+            }
+            setPlotIsGradient(true);
+            setPlotColorGradient(gradient);
+            setPlotColorGradientMinMax(valMinMax);
+          } else if (_col.type == "factor") {
+            let colors = generateColors(_col.value.levels.length);
+            let color_mapper = {};
+            for (let i = 0; i < _col.value.levels.length; i++) {
+              if (!(_col.value.levels[i] in color_mapper)) {
+                color_mapper[_col.value.levels[i]] =
+                  colors[Object.keys(color_mapper).length];
+              }
+            }
+
+            for (let i = 0; i < _col.value.codes.length; i++) {
+              plot_colors[i] =
+                color_mapper[_col.value.levels[_col.value.codes[i]]];
+            }
+            setPlotIsGradient(false);
+            setPlotColorMapper(color_mapper);
+          }
+        } else {
+          for (let i = 0; i < data.x.length; i++) {
             plot_colors[i] = "#729ECE";
           }
         }
@@ -405,11 +474,25 @@ const Explorer = (props) => {
           yBound = yBound / aspRatio;
         }
 
+        let sorted_plot_colors, sorted_data_x, sorted_data_y;
+        if (sort_order !== null) {
+          sorted_data_x = sortArrayByIndices(data.x, sort_order.indices);
+          sorted_data_y = sortArrayByIndices(data.y, sort_order.indices);
+          sorted_plot_colors = sortArrayByIndices(
+            plot_colors,
+            sort_order.indices
+          );
+        } else {
+          sorted_data_x = data.x;
+          sorted_data_y = data.y;
+          sorted_plot_colors = plot_colors;
+        }
+
         let tspec = {
           defaultData: {
-            x: data.x,
-            y: data.y,
-            color: plot_colors,
+            x: sorted_data_x,
+            y: sorted_data_y,
+            color: sorted_plot_colors,
           },
           xAxis: "none",
           yAxis: "none",
@@ -430,7 +513,7 @@ const Explorer = (props) => {
                 attribute: "color",
                 type: "inline",
               },
-              size: { value: 3 },
+              size: { value: 2 },
               opacity: { value: 0.8 },
             },
           ],
@@ -475,7 +558,14 @@ const Explorer = (props) => {
         setReadyToPlot(false);
       }
     }
-  }, [readyToPlot, embeddings, selectedColNameUI, selectedredDimNamesUI]);
+  }, [
+    readyToPlot,
+    embeddings,
+    selectedColNameUI,
+    selectedredDimNamesUI,
+    markerTableSelection,
+    expression,
+  ]);
 
   function onRedDimSelectionChange(obj) {
     setSelectedredDimNamesUI(obj.key);
@@ -491,6 +581,16 @@ const Explorer = (props) => {
 
   function onNomalizeUIChange(obj) {
     setNormalizeUI(obj.target.checked);
+  }
+
+  function onMarkerTableSelectionChange(selectedRowKeys, selectedRows) {
+    setMarkerTableSelection(selectedRowKeys);
+  }
+
+  function onRemoveSelectionclick() {
+    setMarkerTableSelection(null);
+    setExpression(null);
+    setReadyToPlot(true);
   }
 
   return (
@@ -688,22 +788,32 @@ const Explorer = (props) => {
             </Splitter>
           </Splitter.Panel>
           <Splitter.Panel min="20%">
-            <Flex
-              justify="center"
-              align="center"
-              style={{
-                height: "100%",
-              }}
-            >
-              {Array.isArray(markerData) && markerData.length > 0 ? (
-                <Table
-                  dataSource={markerData}
-                  columns={markerDataColumns}
-                  style={{ wordWrap: "break-word" }}
-                />
-              ) : (
-                <div>No row data or markers available for this dataset.</div>
-              )}
+            <Flex vertical style={{ height: "100%" }}>
+              <Button type="primary" onClick={onRemoveSelectionclick}>
+                remove selection
+              </Button>
+              <Table
+                ref={markerTableRef}
+                dataSource={markerData}
+                columns={markerDataColumns}
+                style={{
+                  wordWrap: "break-word",
+                }}
+                virtual
+                pagination={false}
+                rowKey="key"
+                size="small"
+                scroll={{
+                  x: markerTableUIScroll.x,
+                  y: markerTableUIScroll.y,
+                }}
+                rowSelection={{
+                  type: "radio",
+                  selectedRowKeys: markerTableSelection,
+                  onChange: onMarkerTableSelectionChange,
+                }}
+                tableLayout={undefined}
+              />
             </Flex>
           </Splitter.Panel>
         </Splitter>
