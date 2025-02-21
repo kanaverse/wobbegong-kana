@@ -30,17 +30,18 @@ import WebGLVis from "epiviz.gl";
 
 import Rainbow from "../utils/rainbowvis.js";
 import { randomColor } from "randomcolor";
-import { defaultColor, getMinMax, getGradient } from "../utils/plotutils.js";
+import {
+  defaultColor,
+  getMinMax,
+  getGradient,
+  sortWithIndices,
+  sortArrayByIndices,
+} from "../utils/plotutils.js";
 import { generateColors } from "../utils/colors.js";
 import { SVGDimPlot } from "../utils/SVGDimPlot.js";
 
 const Explorer = (props) => {
   const { record } = props;
-
-  // marker related
-  const [markerFiles, setMarkerFiles] = useState(null);
-  const [markersConvertedFiles, setMarkersConvertedFiles] = useState(null);
-  const [markersToExptMapping, setMarkersToExptMapping] = useState(null);
 
   // SCE object of the choosen dataset
   const [sce, setSce] = useState(null);
@@ -49,7 +50,7 @@ const Explorer = (props) => {
   const [rowData, setRowData] = useState(null);
   // available row names
   const [rowNamesUI, setRowNamesUI] = useState(null);
-  // user selected row name to display
+  // user selected row names to display
   const [selectedRowNameUI, setSelectedRowNameUI] = useState(null);
   // rowdata to cache and plot
   const [rowdataCache, setRowdataCache] = useState({});
@@ -85,10 +86,40 @@ const Explorer = (props) => {
   const [plotColorGradientMinMax, setPlotColorGradientMinMax] = useState(null);
 
   // #### ASSAY ####
-  const [chooseAssayUI, setChooseAssayUI] = useState(null);
+  const [assayNamesUI, setAssayNamesUI] = useState(null);
+  const [selectedAssayNameUI, setSelectedAssayNameUI] = useState(null);
+  const [normalizeUI, setNormalizeUI] = useState(null);
+
   const [assay, setAssay] = useState(null);
-  const [nomalizeCountsUI, setNormalizeCountsUI] = useState(null);
   const [expression, setExpression] = useState(null);
+
+  // #### MARKERS ####
+  // flag to signal ready for table
+  const [readyToTable, setReadyToTable] = useState(false);
+  // marker related
+  const [markerFiles, setMarkerFiles] = useState(null);
+  const [markersConvertedFiles, setMarkersConvertedFiles] = useState(null);
+  const [markersToExptMapping, setMarkersToExptMapping] = useState(null);
+  // marker table data
+  const [markerData, setMarkerData] = useState([]);
+  const [markerDataColumns, setMarkerDataColumns] = useState([
+    {
+      title: "rownames",
+      key: "rowname",
+      dataIndex: "rowname",
+      onFilter: (value, record) => record.rowname.includes(value),
+      filterSearch: true,
+    },
+  ]);
+  // ref to the dom
+  const markerTableRef = React.useRef(null);
+  // setting in params for height and width of the vistual scroll
+  const [markerTableUIScroll, setMarkerTableUIScroll] = useState({
+    x: 500,
+    y: 500,
+  });
+  // selected gene
+  const [markerTableSelection, setMarkerTableSelection] = useState([]);
 
   useEffect(() => {
     // apparently a new way to call async functions within useEffects
@@ -97,14 +128,11 @@ const Explorer = (props) => {
     // when the component is Loaded
     async function fetchData() {
       let markers = await wobbegongapi.findMarkerFiles(record.path);
-      console.log(markers);
       let conversion = await wobbegongapi.convertAllFiles(record.path, markers);
-      console.log(conversion);
       let mapping = await wobbegongapi.matchMarkersToExperiment(
         conversion.path,
         conversion.markers
       );
-      console.log(mapping);
       let sce = await wb.load(
         conversion.path,
         wobbegongapi.fetchJson,
@@ -114,9 +142,45 @@ const Explorer = (props) => {
       let row_data = await sce.rowData();
       if (row_data !== null) {
         let rnames = [];
+        rnames.push({ key: String(0), label: "rownames" });
         row_data.columnNames().forEach((x, i) => {
-          rnames.push({ key: String(i), label: x });
+          rnames.push({ key: String(i + 1), label: x });
         });
+
+        let rownamedata = await row_data.rowNames();
+        let r_data = { ...rowdataCache };
+        r_data["rownames"] = rownamedata;
+        setRowdataCache(r_data);
+
+        let _mdata = [];
+        for (let i = 0; i < rownamedata.length; i++) {
+          _mdata.push({
+            key: i,
+            rowname: rownamedata[i],
+          });
+        }
+        setMarkerData(_mdata);
+
+        setMarkerTableUIScroll({
+          x: markerTableRef.current.parentElement.clientWidth - 15,
+          y: markerTableRef.current.parentElement.clientHeight - 70,
+        });
+
+        if (window.markertableObserver) {
+          window.markertableObserver.disconnect();
+        }
+
+        window.markertableObserver = new ResizeObserver(() => {
+          setMarkerTableUIScroll({
+            x: markerTableRef.current.parentElement.clientWidth - 15,
+            y: markerTableRef.current.parentElement.clientHeight - 70,
+          });
+        });
+
+        window.markertableObserver.observe(
+          markerTableRef.current.parentElement
+        );
+
         setRowData(row_data);
         setRowNamesUI(rnames);
         setSelectedRowNameUI("0");
@@ -133,10 +197,27 @@ const Explorer = (props) => {
         setSelectedColNameUI("0");
       }
 
+      let assay_names = await sce.assayNames();
+      let chosen = wobbegongapi.chooseAssay(sce);
+
+      if (assay_names !== null) {
+        let asynames = [];
+        let chosen_index = null;
+        assay_names.forEach((x, i) => {
+          asynames.push({ key: String(i), label: x });
+          if (chosen.assay == x) {
+            chosen_index = String(i);
+          }
+        });
+        setAssayNamesUI(asynames);
+        setSelectedAssayNameUI(chosen_index);
+        setNormalizeUI(chosen.normalize);
+      }
+
       let red_names = await sce.reducedDimensionNames();
       if (red_names !== null) {
         let rednames = [];
-        sce.reducedDimensionNames().forEach((x, i) => {
+        red_names.forEach((x, i) => {
           rednames.push({ key: String(i), label: x });
         });
         setRedDimNamesUI(rednames);
@@ -166,6 +247,8 @@ const Explorer = (props) => {
 
       if (!(colKey in coldataCache)) {
         fetchData();
+      } else {
+        setReadyToPlot(true);
       }
     }
   }, [selectedColNameUI]);
@@ -197,6 +280,42 @@ const Explorer = (props) => {
     }
   }, [selectedredDimNamesUI]);
 
+  // When an Assay for selected
+  useEffect(() => {
+    // apparently a new way to call async functions within components
+    // to keep react happy
+    async function fetchData() {
+      let ass = await sce.assay(
+        assayNamesUI[parseInt(selectedAssayNameUI)]["label"]
+      );
+      setAssay(ass);
+    }
+
+    if (sce !== null) {
+      fetchData();
+    }
+  }, [selectedAssayNameUI]);
+
+  // when a marker is selected
+  useEffect(() => {
+    async function fetchData() {
+      if (assay !== null && markerTableSelection !== null) {
+        let vals = await assay.row(markerTableSelection[0], { asDense: true });
+        if (normalizeUI) {
+          let sf = await wobbegongapi.computeSizeFactors(assay);
+          vals = wobbegongapi.normalizeCounts(vals, sf, true);
+        }
+
+        setExpression(vals);
+        setReadyToPlot(true);
+      }
+    }
+
+    if (sce !== null) {
+      fetchData();
+    }
+  }, [markerTableSelection, assay, normalizeUI]);
+
   // useEffect(() => {
   //   // apparently a new way to call async functions within components
   //   // to keep react happy
@@ -209,7 +328,7 @@ const Explorer = (props) => {
   //     if (chosen.normalize) {
   //       let sf = await wobbegongapi.computeSizeFactors(ass);
   //       console.log(sf);
-  //       vals = await wobbegongapi.normalizeCounts(vals, sf, true);
+  //       vals = wobbegongapi.normalizeCounts(vals, sf, true);
   //     }
   //     console.log(vals);
   //   }
@@ -219,8 +338,31 @@ const Explorer = (props) => {
   //   }
   // }, [sce]);
 
-  // rendering the embedding plot
+  // when a row columnname changes
+  useEffect(() => {
+    async function fetchData() {
+      const rowKey = rowNamesUI[parseInt(selectedRowNameUI)]["label"];
 
+      let output = await rowData.column(rowKey, { type: true });
+
+      let row_data = { ...rowdataCache };
+      row_data[rowKey] = output;
+      setRowdataCache(row_data);
+      setReadyToTable(true);
+    }
+
+    if (sce !== null) {
+      const rowKey = rowNamesUI[parseInt(selectedRowNameUI)]["label"];
+
+      if (!(rowKey in rowdataCache)) {
+        fetchData();
+      } else {
+        setReadyToTable(true);
+      }
+    }
+  }, [selectedRowNameUI]);
+
+  // rendering the embedding plot
   useEffect(() => {
     const containerEl = embeddingContainer.current;
 
@@ -241,56 +383,71 @@ const Explorer = (props) => {
 
         let plot_colors = [];
         const colKey = colNamesUI[parseInt(selectedColNameUI)]["label"];
+        let sort_order = null;
 
-        for (let i = 0; i < data.x.length; i++) {
-          console.log(coldataCache);
-          if (colKey in coldataCache) {
-            const _col = coldataCache[colKey];
-            if (_col.type == "string") {
-              let uvals = [...new Set(_col.value)];
-              let colors = generateColors(uvals.length);
-              let color_mapper = {};
-              for (let i = 0; i < _col.value.length; i++) {
-                if (!(_col.value[i] in color_mapper)) {
-                  color_mapper[_col.value[i]] =
-                    colors[Object.keys(color_mapper).length];
-                }
+        if (expression !== null) {
+          let valMinMax = getMinMax(expression);
+          let gradient = getGradient(valMinMax[0], valMinMax[1]);
+          sort_order = sortWithIndices(expression);
 
-                plot_colors[i] = color_mapper[_col.value[i]];
-              }
-              setPlotIsGradient(false);
-              setPlotColorMapper(color_mapper);
-            } else if (
-              _col.type == "number" ||
-              _col.type == "integer" ||
-              _col.type == "double"
-            ) {
-              let valMinMax = getMinMax(_col.value);
-              let gradient = getGradient(valMinMax[0], valMinMax[1]);
-              for (let i = 0; i < _col.value.length; i++) {
-                plot_colors[i] = "#" + gradient.colorAt(_col.value[i]);
-              }
-              setPlotIsGradient(true);
-              setPlotColorGradient(gradient);
-              setPlotColorGradientMinMax(valMinMax);
-            } else if (_col.type == "factor") {
-              let colors = generateColors(_col.value.levels.length);
-              let color_mapper = {};
-              for (let i = 0; i < _col.value.levels.length; i++) {
-                if (!(_col.value.levels[i] in color_mapper)) {
-                  color_mapper[_col.value.levels[i]] =
-                    colors[Object.keys(color_mapper).length];
-                }
+          for (let i = 0; i < expression.length; i++) {
+            plot_colors[i] = "#" + gradient.colorAt(expression[i]);
+          }
+          setPlotIsGradient(true);
+          setPlotColorGradient(gradient);
+          setPlotColorGradientMinMax(valMinMax);
+        } else if (colKey in coldataCache) {
+          const _col = coldataCache[colKey];
+          if (_col.type == "string") {
+            let uvals = [...new Set(_col.value)];
+            let colors = generateColors(uvals.length);
+            let color_mapper = {};
+            for (let i = 0; i < _col.value.length; i++) {
+              if (!(_col.value[i] in color_mapper)) {
+                color_mapper[_col.value[i]] =
+                  colors[Object.keys(color_mapper).length];
               }
 
-              for (let i = 0; i < _col.value.codes.length; i++) {
-                plot_colors[i] =
-                  color_mapper[_col.value.levels[_col.value.codes[i]]];
-              }
-              setPlotIsGradient(false);
-              setPlotColorMapper(color_mapper);
+              plot_colors[i] = color_mapper[_col.value[i]];
             }
-          } else {
+
+            setPlotIsGradient(false);
+            setPlotColorMapper(color_mapper);
+          } else if (
+            _col.type == "number" ||
+            _col.type == "integer" ||
+            _col.type == "double"
+          ) {
+            let valMinMax = getMinMax(_col.value);
+            let gradient = getGradient(valMinMax[0], valMinMax[1]);
+
+            sort_order = sortWithIndices(_col.value);
+
+            for (let i = 0; i < _col.value.length; i++) {
+              plot_colors[i] = "#" + gradient.colorAt(_col.value[i]);
+            }
+            setPlotIsGradient(true);
+            setPlotColorGradient(gradient);
+            setPlotColorGradientMinMax(valMinMax);
+          } else if (_col.type == "factor") {
+            let colors = generateColors(_col.value.levels.length);
+            let color_mapper = {};
+            for (let i = 0; i < _col.value.levels.length; i++) {
+              if (!(_col.value.levels[i] in color_mapper)) {
+                color_mapper[_col.value.levels[i]] =
+                  colors[Object.keys(color_mapper).length];
+              }
+            }
+
+            for (let i = 0; i < _col.value.codes.length; i++) {
+              plot_colors[i] =
+                color_mapper[_col.value.levels[_col.value.codes[i]]];
+            }
+            setPlotIsGradient(false);
+            setPlotColorMapper(color_mapper);
+          }
+        } else {
+          for (let i = 0; i < data.x.length; i++) {
             plot_colors[i] = "#729ECE";
           }
         }
@@ -317,11 +474,25 @@ const Explorer = (props) => {
           yBound = yBound / aspRatio;
         }
 
+        let sorted_plot_colors, sorted_data_x, sorted_data_y;
+        if (sort_order !== null) {
+          sorted_data_x = sortArrayByIndices(data.x, sort_order.indices);
+          sorted_data_y = sortArrayByIndices(data.y, sort_order.indices);
+          sorted_plot_colors = sortArrayByIndices(
+            plot_colors,
+            sort_order.indices
+          );
+        } else {
+          sorted_data_x = data.x;
+          sorted_data_y = data.y;
+          sorted_plot_colors = plot_colors;
+        }
+
         let tspec = {
           defaultData: {
-            x: data.x,
-            y: data.y,
-            color: plot_colors,
+            x: sorted_data_x,
+            y: sorted_data_y,
+            color: sorted_plot_colors,
           },
           xAxis: "none",
           yAxis: "none",
@@ -342,7 +513,7 @@ const Explorer = (props) => {
                 attribute: "color",
                 type: "inline",
               },
-              size: { value: 3 },
+              size: { value: 2 },
               opacity: { value: 0.8 },
             },
           ],
@@ -387,7 +558,14 @@ const Explorer = (props) => {
         setReadyToPlot(false);
       }
     }
-  }, [readyToPlot, embeddings, selectedColNameUI, selectedredDimNamesUI]);
+  }, [
+    readyToPlot,
+    embeddings,
+    selectedColNameUI,
+    selectedredDimNamesUI,
+    markerTableSelection,
+    expression,
+  ]);
 
   function onRedDimSelectionChange(obj) {
     setSelectedredDimNamesUI(obj.key);
@@ -395,6 +573,24 @@ const Explorer = (props) => {
 
   function onColNameSelectionChange(obj) {
     setSelectedColNameUI(obj.key);
+  }
+
+  function onAssaySelectionChange(obj) {
+    setSelectedAssayNameUI(obj.key);
+  }
+
+  function onNomalizeUIChange(obj) {
+    setNormalizeUI(obj.target.checked);
+  }
+
+  function onMarkerTableSelectionChange(selectedRowKeys, selectedRows) {
+    setMarkerTableSelection(selectedRowKeys);
+  }
+
+  function onRemoveSelectionclick() {
+    setMarkerTableSelection(null);
+    setExpression(null);
+    setReadyToPlot(true);
   }
 
   return (
@@ -461,6 +657,33 @@ const Explorer = (props) => {
               </Space>
             </a>
           </Dropdown>
+        </>
+      )}
+      {assayNamesUI && sce && selectedAssayNameUI && (
+        <>
+          {" "}
+          Explore assay:{" "}
+          <Dropdown
+            menu={{
+              items: assayNamesUI,
+              selectable: true,
+              defaultSelectedKeys: [selectedAssayNameUI],
+              onSelect: onAssaySelectionChange,
+            }}
+            trigger={["click"]}
+          >
+            <a onClick={(e) => e.preventDefault()}>
+              <Space>
+                {assayNamesUI[parseInt(selectedAssayNameUI)]["label"]}
+                <DownOutlined />
+              </Space>
+            </a>
+          </Dropdown>{" "}
+          {normalizeUI !== null && (
+            <Checkbox checked={normalizeUI} onChange={onNomalizeUIChange}>
+              Normalize ?
+            </Checkbox>
+          )}
         </>
       )}
       <Flex gap="middle" vertical>
@@ -546,6 +769,7 @@ const Explorer = (props) => {
                               Object.keys(plotColorMapper),
                               (item, i) => (
                                 <Typography.Text
+                                  key={i}
                                   style={{
                                     color: plotColorMapper[item],
                                   }}
@@ -564,14 +788,32 @@ const Explorer = (props) => {
             </Splitter>
           </Splitter.Panel>
           <Splitter.Panel min="20%">
-            <Flex
-              justify="center"
-              align="center"
-              style={{
-                height: "100%",
-              }}
-            >
-              Markers
+            <Flex vertical style={{ height: "100%" }}>
+              <Button type="primary" onClick={onRemoveSelectionclick}>
+                remove selection
+              </Button>
+              <Table
+                ref={markerTableRef}
+                dataSource={markerData}
+                columns={markerDataColumns}
+                style={{
+                  wordWrap: "break-word",
+                }}
+                virtual
+                pagination={false}
+                rowKey="key"
+                size="small"
+                scroll={{
+                  x: markerTableUIScroll.x,
+                  y: markerTableUIScroll.y,
+                }}
+                rowSelection={{
+                  type: "radio",
+                  selectedRowKeys: markerTableSelection,
+                  onChange: onMarkerTableSelectionChange,
+                }}
+                tableLayout={undefined}
+              />
             </Flex>
           </Splitter.Panel>
         </Splitter>

@@ -206,3 +206,30 @@ export function getGradient(min, max) {
 
   return tmpgradient;
 }
+
+export function sortWithIndices(array) {
+  let indexedArray = [];
+  for (let i = 0; i < array.length; i++) {
+    indexedArray.push({ value: array[i], index: i });
+  }
+  // const indexedArray = array.map((value, index) => ({ value, index }));
+
+  indexedArray.sort((a, b) => a.value - b.value);
+
+  const sortedValues = indexedArray.map((item) => item.value);
+  const sortedIndices = indexedArray.map((item) => item.index);
+
+  return { values: sortedValues, indices: sortedIndices };
+}
+
+export function sortArrayByIndices(array, indices) {
+  if (array.length !== indices.length) {
+    throw new Error("Array and indices must have the same length.");
+  }
+
+  const result = [];
+  for (let i = 0; i < array.length; i++) {
+    result[indices[i]] = array[i];
+  }
+  return result;
+}
