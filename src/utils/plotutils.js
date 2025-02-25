@@ -11,6 +11,10 @@ export const getMinMax = (arr) => {
       min = x;
     }
   });
+
+  if (min ==- max) {
+    max = min + 0.01
+  }
   return [min, max];
 };
 
