@@ -7,11 +7,19 @@ const wobbegong_url = "https://research.gene.com/wobbegong/api/v1";
 const wobbegong_json_cache = new Map();
 
 export async function getSE(path) {
+  console.log("getSE path", path)
   const data_path = await convertExperiment(path);
   const summ = await fetchJson(data_path + "/summary.json");
-  let se = new wb.SummarizedExperiment(summ, data_path, fetchJson, fetchRange);
+  let se = new wob.SummarizedExperiment(summ, data_path, fetchJson, fetchRange);
 
   return se;
+}
+
+export async function getMarker(path) {
+  const summ = await fetchJson(path + "/summary.json");
+  let _markerdata = new wob.DataFrame(summ, path, fetchRange);
+
+  return _markerdata;
 }
 
 export async function fetchJson(path) {
@@ -420,43 +428,7 @@ export function breakString(str, maxLength) {
   }
 }
 
-export async function findMarkers(path) {
-  let dir = path.slice(0, path.lastIndexOf("/"));
-
-  let list_res = await fetch(
-    sewerrat_url + "/list?recursive=false&path=" + encodeURIComponent(dir)
-  );
-  if (!list_res.ok) {
-    throw new Error(
-      "failed to obtain a directory listing for '" +
-        dir +
-        "' (" +
-        String(list_res.status) +
-        ")"
-    );
-  }
-  let listing = await list_res.json();
-
-  if (listing.indexOf("markers/") < 0) {
-    return listing
-      .filter((x) => x.startsWith("markers-"))
-      .map((x) => dir + "/" + x);
-  }
-
-  let subdir = dir + "/markers";
-  let sublist_res = await fetch(
-    sewerrat_url + "/list?recursive=false&path=" + encodeURIComponent(subdir)
-  );
-  if (!sublist_res.ok) {
-    throw new Error(
-      "failed to obtain a directory listing for '" +
-        subdir +
-        "' (" +
-        String(sublist_res.status) +
-        ")"
-    );
-  }
-
-  let sublisting = await sublist_res.json();
-  return sublisting.filter((x) => x.endsWith("/")).map((x) => subdir + "/" + x);
+export function getParent(path) {
+  let parent = path.replace(/\/[^\/]+$/, "");
+  return parent;
 }

@@ -99,7 +99,7 @@ const App = () => {
         }}
       >
         <h2>
-          Search <a href="https://github.roche.com/GP/LunaticDB">LunaticDB</a>{" "}
+          Search <a href="https://github.roche.com/GP/LunaticDB" target="_blank">LunaticDB</a>{" "}
           for interesting single-cell datasets
         </h2>
       </Header>
