@@ -22,6 +22,8 @@ import {
   List,
 } from "antd";
 const { Header, Content, Sider } = Layout;
+const { Column, ColumnGroup } = Table;
+
 import {
   DatabaseTwoTone,
   DownOutlined,
@@ -88,6 +90,9 @@ const Explorer = (props) => {
   const [plotColorMapper, setPlotColorMapper] = useState(null);
   const [plotColorGradient, setPlotColorGradient] = useState(null);
   const [plotColorGradientMinMax, setPlotColorGradientMinMax] = useState(null);
+
+  // #### MODALITY ####
+  const [selectedModality, setSelectedModality] = useState("");
 
   // #### ASSAY ####
   const [assayNamesUI, setAssayNamesUI] = useState(null);
@@ -224,7 +229,7 @@ const Explorer = (props) => {
   const [markerFiles, setMarkerFiles] = useState(null);
   const [markersConvertedFiles, setMarkersConvertedFiles] = useState(null);
   const [markersToExptMapping, setMarkersToExptMapping] = useState(null);
-  // marker table data
+  // marker table data - this is just rowdata
   const [markerData, setMarkerData] = useState([]);
   const [markerDataColumns, setMarkerDataColumns] = useState([
     {
@@ -232,17 +237,31 @@ const Explorer = (props) => {
       key: "rowname",
       dataIndex: "rowname",
       ...getColumnSearchProps("rowname"),
+      fixed: "left",
+      width: 100,
     },
   ]);
+
+  const [markerDataToShow, setMarkerDataToShow] = useState(null);
+  const [markerDataColumnsToShow, setMarkerDataColumnsToShow] = useState(null);
+
   // ref to the dom
   const markerTableRef = React.useRef(null);
-  // setting in params for height and width of the vistual scroll
+  // setting in params for height and width of the virtual scroll
   const [markerTableUIScroll, setMarkerTableUIScroll] = useState({
-    x: 500,
+    x: 2000,
     y: 500,
   });
   // selected gene
-  const [markerTableSelection, setMarkerTableSelection] = useState([]);
+  const [markerTableSelection, setMarkerTableSelection] = useState(null);
+
+  const [markerItemsUI, setMarkerItemsUI] = useState([
+    {
+      key: "rowdata",
+      label: "rowdata",
+    },
+  ]);
+  const [selectedMarkerUI, setSelectedMarkerUI] = useState(null);
 
   useEffect(() => {
     // apparently a new way to call async functions within useEffects
@@ -250,12 +269,28 @@ const Explorer = (props) => {
 
     // when the component is Loaded
     async function fetchData() {
-      let markers = await wobbegongapi.findMarkerFiles(record.path);
-      let conversion = await wobbegongapi.convertAllFiles(record.path, markers);
+      let parent_path = wobbegongapi.getParent(record.path);
+      let markers = await wobbegongapi.findMarkerFiles(parent_path);
+      setMarkerFiles(markers);
+
+      let _markersui = [...markerItemsUI];
+      for (const m of markers[selectedModality]) {
+        _markersui.push({
+          key: m,
+          label: m,
+        });
+      }
+
+      setMarkerItemsUI(_markersui);
+      // let markers2 = await wobbegongapi.findMarkers(record.path);
+      let conversion = await wobbegongapi.convertAllFiles(parent_path, markers);
+      setMarkersConvertedFiles(conversion);
       let mapping = await wobbegongapi.matchMarkersToExperiment(
         conversion.path,
         conversion.markers
       );
+      setMarkersToExptMapping(mapping);
+
       let sce = await wb.load(
         conversion.path,
         wobbegongapi.fetchJson,
@@ -265,9 +300,12 @@ const Explorer = (props) => {
       let row_data = await sce.rowData();
       if (row_data !== null) {
         let rnames = [];
+        let _extra_columns = [...markerDataColumns];
+
         rnames.push({ key: String(0), label: "rownames" });
         row_data.columnNames().forEach((x, i) => {
           rnames.push({ key: String(i + 1), label: x });
+          _extra_columns.push({ key: x, title: x, dataIndex: x });
         });
 
         let rownamedata = await row_data.rowNames();
@@ -282,11 +320,43 @@ const Explorer = (props) => {
             rowname: rownamedata[i],
           });
         }
+
+        for (const _xcol of row_data.columnNames()) {
+          const _colvalues = await row_data.column(_xcol);
+          for (let i = 0; i < rownamedata.length; i++) {
+            _mdata[i][_xcol] = _colvalues[i];
+          }
+        }
         setMarkerData(_mdata);
+        // _extra_columns.push({
+        //   title: "Action",
+        //   key: "operation",
+        //   fixed: "right",
+        //   width: 100,
+        //   render: (_, record) => {
+        //     if ("_uiselected" in record && record[_uiselected] == true) {
+        //       return (
+        //         <a onClick={() => deselectRowInMarker(record.key)}>
+        //           {" "}
+        //           Clear Gene
+        //         </a>
+        //       );
+        //     } else {
+        //       return (
+        //         <a onClick={() => selectRowInMarker(record.key)}>
+        //           {" "}
+        //           Select Gene
+        //         </a>
+        //       );
+        //     }
+        //   },
+        // });
+        setMarkerDataColumns(_extra_columns);
+        setSelectedMarkerUI("rowdata");
 
         setMarkerTableUIScroll({
-          x: markerTableRef.current.parentElement.clientWidth - 15,
-          y: markerTableRef.current.parentElement.clientHeight - 70,
+          x: 2000, //markerTableRef.current.parentElement.clientWidth - 15,
+          y: markerTableRef.current.parentElement.clientHeight - 90,
         });
 
         if (window.markertableObserver) {
@@ -295,8 +365,8 @@ const Explorer = (props) => {
 
         window.markertableObserver = new ResizeObserver(() => {
           setMarkerTableUIScroll({
-            x: markerTableRef.current.parentElement.clientWidth - 15,
-            y: markerTableRef.current.parentElement.clientHeight - 70,
+            x: 2000, //markerTableRef.current.parentElement.clientWidth - 15,
+            y: markerTableRef.current.parentElement.clientHeight - 90,
           });
         });
 
@@ -419,11 +489,11 @@ const Explorer = (props) => {
     }
   }, [selectedAssayNameUI]);
 
-  // when a marker is selected
+  // when a gene is selected
   useEffect(() => {
     async function fetchData() {
       if (assay !== null && markerTableSelection !== null) {
-        let vals = await assay.row(markerTableSelection[0], { asDense: true });
+        let vals = await assay.row(markerTableSelection, { asDense: true });
         if (normalizeUI) {
           let sf = await wobbegongapi.computeSizeFactors(assay);
           vals = wobbegongapi.normalizeCounts(vals, sf, true);
@@ -438,6 +508,65 @@ const Explorer = (props) => {
       fetchData();
     }
   }, [markerTableSelection, assay, normalizeUI]);
+
+  // When a Marker is selected
+  useEffect(() => {
+    // apparently a new way to call async functions within components
+    // to keep react happy
+    async function fetchData() {
+      if (selectedMarkerUI == "rowdata") {
+        setMarkerDataToShow(markerData);
+        setMarkerDataColumnsToShow(markerDataColumns);
+      } else {
+        const _indexofselection =
+          markerFiles[selectedModality].indexOf(selectedMarkerUI);
+        const _convertedFilePath =
+          markersConvertedFiles["markers"][selectedModality][_indexofselection];
+
+        let _marker_data = await wobbegongapi.getMarker(_convertedFilePath);
+
+        let _marker_names = [];
+        let _marker_extra_columns = [...markerDataColumnsToShow];
+        const all_names = markerDataColumnsToShow.map((x) => x.key);
+        _marker_data.columnNames().forEach((x, i) => {
+          if (all_names.indexOf(x) == -1) {
+            _marker_extra_columns.push({ key: x, title: x, dataIndex: x });
+          }
+        });
+
+        let _marker_row_names = await _marker_data.rowNames();
+        const marker_index_to_row_data = wobbegongapi.mapNames(
+          _marker_row_names,
+          markerData.map((x) => x["rowname"])
+        );
+
+        let _row_data_with_marker_metrics = [...markerDataToShow];
+
+        for (const _xcol of _marker_data.columnNames()) {
+          if (all_names.indexOf(_xcol) == -1) {
+            const _colvalues = await _marker_data.column(_xcol);
+            for (let i = 0; i < marker_index_to_row_data.length; i++) {
+              _row_data_with_marker_metrics[marker_index_to_row_data[i]][
+                _xcol
+              ] = _colvalues[i];
+            }
+          }
+        }
+
+        // reorder row_Data to the order from the marker file
+        let _reordered_marker_metrics = [];
+        for (const idc of marker_index_to_row_data) {
+          _reordered_marker_metrics.push(_row_data_with_marker_metrics[idc]);
+        }
+        setMarkerDataToShow(_reordered_marker_metrics);
+        setMarkerDataColumnsToShow(_marker_extra_columns);
+      }
+    }
+
+    if (sce !== null && selectedMarkerUI !== null) {
+      fetchData();
+    }
+  }, [selectedMarkerUI, sce]);
 
   // useEffect(() => {
   //   // apparently a new way to call async functions within components
@@ -460,6 +589,29 @@ const Explorer = (props) => {
   //     fetchData();
   //   }
   // }, [sce]);
+
+  useEffect(() => {
+    async function fetchData() {
+      const rowKey = rowNamesUI[parseInt(selectedRowNameUI)]["label"];
+
+      let output = await rowData.column(rowKey, { type: true });
+
+      let row_data = { ...rowdataCache };
+      row_data[rowKey] = output;
+      setRowdataCache(row_data);
+      setReadyToTable(true);
+    }
+
+    if (sce !== null) {
+      const rowKey = rowNamesUI[parseInt(selectedRowNameUI)]["label"];
+
+      if (!(rowKey in rowdataCache)) {
+        fetchData();
+      } else {
+        setReadyToTable(true);
+      }
+    }
+  }, [markerFiles, markersConvertedFiles, markersToExptMapping]);
 
   // when a row columnname changes
   useEffect(() => {
@@ -702,6 +854,10 @@ const Explorer = (props) => {
     setSelectedAssayNameUI(obj.key);
   }
 
+  function onMarkerSelectionChange(obj) {
+    setSelectedMarkerUI(obj.key);
+  }
+
   function onNomalizeUIChange(obj) {
     setNormalizeUI(obj.target.checked);
   }
@@ -918,40 +1074,56 @@ const Explorer = (props) => {
                 alignContent: "center",
               }}
             >
-              <h3>Select Markers</h3>
+              <h3>Choose a marker to order</h3>
+              <Dropdown
+                menu={{
+                  items: markerItemsUI,
+                  selectable: true,
+                  onSelect: onMarkerSelectionChange,
+                }}
+                trigger={["click"]}
+              >
+                <a onClick={(e) => e.preventDefault()}>
+                  <Space>
+                    {selectedMarkerUI}
+                    <DownOutlined />
+                  </Space>
+                </a>
+              </Dropdown>
+              <p>(defaults to showing row data of the experiment)</p>
               <Button
                 type="primary"
                 onClick={onRemoveSelectionclick}
                 style={{ marginTop: "15px" }}
                 disabled={markerTableSelection === null}
               >
-                remove selection
+                clear gene selection
               </Button>
             </Flex>
-            {/* <Flex style={{ height: "100%" }}> */}
-            <Table
-              ref={markerTableRef}
-              dataSource={markerData}
-              columns={markerDataColumns}
-              style={{
-                wordWrap: "break-word",
-              }}
-              virtual
-              pagination={false}
-              rowKey="key"
-              size="small"
-              scroll={{
-                x: markerTableUIScroll.x,
-                y: markerTableUIScroll.y,
-              }}
-              rowSelection={{
-                type: "radio",
-                selectedRowKeys: markerTableSelection,
-                onChange: onMarkerTableSelectionChange,
-              }}
-              tableLayout={undefined}
-            />
-            {/* </Flex> */}
+            <Flex style={{ height: "95%" }}>
+              <Table
+                ref={markerTableRef}
+                dataSource={markerDataToShow}
+                columns={markerDataColumnsToShow}
+                // style={{
+                //   wordWrap: "break-word",
+                // }}
+                virtual
+                pagination={false}
+                rowKey="key"
+                size="small"
+                scroll={{
+                  x: markerTableUIScroll.x,
+                  y: markerTableUIScroll.y, // "max-content"
+                }}
+                rowSelection={{
+                  type: "radio",
+                  selectedRowKeys: markerTableSelection,
+                  onChange: onMarkerTableSelectionChange,
+                }}
+                tableLayout={undefined}
+              ></Table>
+            </Flex>
           </Splitter.Panel>
         </Splitter>
       </Flex>
